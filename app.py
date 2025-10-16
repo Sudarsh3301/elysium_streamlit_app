@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 import logging
 import base64
+from athena_ui import AthenaUI
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -303,7 +304,7 @@ class DivisionMapper:
 
     DIVISION_MAPPINGS = {
         "mainboard": "ima",
-        "main": "ima",
+        "main": "mai",
         "ima": "ima",
         "development": "dev",
         "dev": "dev",
@@ -887,6 +888,12 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
+    # Create tabs
+    tab1, tab2 = st.tabs(["📚 Catalogue", "🏛️ Athena"])
+
+    # Initialize Athena UI
+    athena_ui = AthenaUI()
+
     # Load data
     @st.cache_data
     def load_data():
@@ -898,6 +905,9 @@ def main():
         st.error("No model data available. Please check the data file.")
         return
 
+    # Cache dataframe for Athena
+    st.session_state.df_cache = df
+
     # Initialize session state
     if 'ai_filters' not in st.session_state:
         st.session_state.ai_filters = {}
@@ -908,95 +918,101 @@ def main():
     if 'hover_model' not in st.session_state:
         st.session_state.hover_model = None
 
-    # Only show filters and search when not in expanded view
-    if not st.session_state.selected_model:
-        # Sidebar filters
-        st.sidebar.header("🔍 Manual Filters")
+    # Catalogue Tab
+    with tab1:
+        # Only show filters and search when not in expanded view
+        if not st.session_state.selected_model:
+            # Sidebar filters
+            st.sidebar.header("🔍 Manual Filters")
 
-        # Get unique values for filters
-        unique_hair_colors = sorted(df['hair_color'].dropna().unique())
-        unique_eye_colors = sorted(df['eye_color'].dropna().unique())
-        unique_divisions = sorted(df['division'].dropna().unique())
-        min_height, max_height = int(df['height_cm'].min()), int(df['height_cm'].max())
+            # Get unique values for filters
+            unique_hair_colors = sorted(df['hair_color'].dropna().unique())
+            unique_eye_colors = sorted(df['eye_color'].dropna().unique())
+            unique_divisions = sorted(df['division'].dropna().unique())
+            min_height, max_height = int(df['height_cm'].min()), int(df['height_cm'].max())
 
-        # Manual filter controls
-        selected_hair = st.sidebar.multiselect("Hair Color", unique_hair_colors)
-        selected_eyes = st.sidebar.multiselect("Eye Color", unique_eye_colors)
-        selected_divisions = st.sidebar.multiselect("Division", unique_divisions)
-        height_range = st.sidebar.slider(
-            "Height Range (cm)",
-            min_height, max_height,
-            (min_height, max_height)
-        )
+            # Manual filter controls
+            selected_hair = st.sidebar.multiselect("Hair Color", unique_hair_colors)
+            selected_eyes = st.sidebar.multiselect("Eye Color", unique_eye_colors)
+            selected_divisions = st.sidebar.multiselect("Division", unique_divisions)
+            height_range = st.sidebar.slider(
+                "Height Range (cm)",
+                min_height, max_height,
+                (min_height, max_height)
+            )
 
-        if st.sidebar.button("🔄 Reset Filters"):
-            st.session_state.ai_filters = {}
-            # Clear manual filters by rerunning with empty session state
-            for key in list(st.session_state.keys()):
-                if key.startswith('multiselect') or key.startswith('slider'):
-                    del st.session_state[key]
-            st.rerun()
+            if st.sidebar.button("🔄 Reset Filters"):
+                st.session_state.ai_filters = {}
+                # Clear manual filters by rerunning with empty session state
+                for key in list(st.session_state.keys()):
+                    if key.startswith('multiselect') or key.startswith('slider'):
+                        del st.session_state[key]
+                st.rerun()
 
-        # Main area - AI Query
-        st.header("🤖 AI-Powered Search")
+            # Main area - AI Query
+            st.header("🤖 AI-Powered Search")
 
-        user_query = st.text_area(
-            "Enter client brief:",
-            placeholder="e.g., 'Looking for blonde models with blue eyes around 175 cm'",
-            height=100
-        )
+            user_query = st.text_area(
+                "Enter client brief:",
+                placeholder="e.g., 'Looking for blonde models with blue eyes around 175 cm'",
+                height=100
+            )
 
-        search_col = st.columns([1])[0]
+            search_col = st.columns([1])[0]
 
-        with search_col:
-            if st.button("🔍 Search with AI (Ollama)", type="primary"):
-                if user_query.strip():
-                    with st.spinner("🧠 Processing with AI..."):
-                        prompt = OllamaClient.create_prompt(user_query)
-                        ai_result = OllamaClient.query_ollama(prompt)
+            with search_col:
+                if st.button("🔍 Search with AI (Ollama)", type="primary"):
+                    if user_query.strip():
+                        with st.spinner("🧠 Processing with AI..."):
+                            prompt = OllamaClient.create_prompt(user_query)
+                            ai_result = OllamaClient.query_ollama(prompt)
 
-                        if ai_result is not None:
-                            st.session_state.ai_filters = ai_result
-                            st.success("✅ AI query processed successfully!")
-                        else:
-                            st.error("❌ Failed to process AI query")
-                else:
-                    st.warning("⚠️ Please enter a query first")
+                            if ai_result is not None:
+                                st.session_state.ai_filters = ai_result
+                                st.success("✅ AI query processed successfully!")
+                            else:
+                                st.error("❌ Failed to process AI query")
+                    else:
+                        st.warning("⚠️ Please enter a query first")
 
-        # Display AI filters
-        if st.session_state.ai_filters:
-            st.subheader("🎯 AI-Parsed Filters")
-            st.json(st.session_state.ai_filters)
+            # Display AI filters
+            if st.session_state.ai_filters:
+                st.subheader("🎯 AI-Parsed Filters")
+                st.json(st.session_state.ai_filters)
 
-        # Apply filters and display results
-        filtered_df = FilterEngine.apply_filters(
-            df,
-            hair_colors=selected_hair,
-            eye_colors=selected_eyes,
-            height_range=height_range,
-            divisions=selected_divisions,
-            ai_filters=st.session_state.ai_filters
-        )
-    else:
-        # When in expanded view, use full dataset
-        filtered_df = df
-
-    # Check if a model is selected for expanded view
-    if st.session_state.selected_model:
-        # Find the selected model data
-        selected_model_data = df[df['model_id'] == st.session_state.selected_model]
-        if not selected_model_data.empty:
-            show_expanded_model_view(selected_model_data.iloc[0].to_dict(), filtered_df)
+            # Apply filters and display results
+            filtered_df = FilterEngine.apply_filters(
+                df,
+                hair_colors=selected_hair,
+                eye_colors=selected_eyes,
+                height_range=height_range,
+                divisions=selected_divisions,
+                ai_filters=st.session_state.ai_filters
+            )
         else:
-            st.error("Selected model not found.")
-            st.session_state.selected_model = None
-            # Show grid if model not found
+            # When in expanded view, use full dataset
+            filtered_df = df
+
+        # Check if a model is selected for expanded view
+        if st.session_state.selected_model:
+            # Find the selected model data
+            selected_model_data = df[df['model_id'] == st.session_state.selected_model]
+            if not selected_model_data.empty:
+                show_expanded_model_view(selected_model_data.iloc[0].to_dict(), filtered_df)
+            else:
+                st.error("Selected model not found.")
+                st.session_state.selected_model = None
+                # Show grid if model not found
+                st.subheader(f"📊 Results: Displaying {min(len(filtered_df), 20)} of {len(df)} models")
+                display_model_grid(filtered_df)
+        else:
+            # Display results count and model grid only when not in expanded view
             st.subheader(f"📊 Results: Displaying {min(len(filtered_df), 20)} of {len(df)} models")
             display_model_grid(filtered_df)
-    else:
-        # Display results count and model grid only when not in expanded view
-        st.subheader(f"📊 Results: Displaying {min(len(filtered_df), 20)} of {len(df)} models")
-        display_model_grid(filtered_df)
+
+    # Athena Tab
+    with tab2:
+        athena_ui.render_athena_tab(df)
 
 if __name__ == "__main__":
     main()

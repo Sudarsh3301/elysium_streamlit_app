@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Comp Sheet | {{ agency.name }}</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 0.75in;
+    }
+
+    body {
+      font-family: "Helvetica Neue", Arial, sans-serif;
+      color: #222;
+      line-height: 1.3;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* Header */
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+      border-bottom: 2px solid #667eea;
+      padding-bottom: 20px;
+    }
+
+    .header h1 {
+      font-size: 24px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin: 0 0 10px 0;
+      color: #2c3e50;
+    }
+
+    .header h2 {
+      font-size: 14px;
+      font-weight: 300;
+      color: #666;
+      margin: 0 0 5px 0;
+    }
+
+    .header .brief {
+      font-size: 11px;
+      color: #555;
+      font-style: italic;
+      max-width: 600px;
+      margin: 10px auto 0 auto;
+      padding: 10px;
+      background: #f8f9fa;
+      border-radius: 4px;
+    }
+
+    /* Model grid */
+    .model-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+
+    .model-card {
+      text-align: center;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      overflow: hidden;
+      background: white;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .model-image {
+      width: 100%;
+      height: 180px;
+      object-fit: cover;
+      background: #f0f0f0;
+    }
+
+    .model-info {
+      padding: 12px 8px;
+    }
+
+    .model-name {
+      font-size: 13px;
+      font-weight: 600;
+      margin: 0 0 6px 0;
+      color: #2c3e50;
+    }
+
+    .model-details {
+      font-size: 9px;
+      color: #666;
+      line-height: 1.4;
+    }
+
+    .model-details div {
+      margin: 2px 0;
+    }
+
+    .model-id {
+      font-size: 8px;
+      color: #999;
+      margin-top: 6px;
+      font-family: monospace;
+    }
+
+    .fit-score {
+      display: inline-block;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 2px 6px;
+      border-radius: 10px;
+      font-size: 8px;
+      font-weight: 600;
+      margin-top: 4px;
+    }
+
+    /* Footer */
+    .footer {
+      text-align: center;
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 1px solid #ddd;
+      font-size: 10px;
+      color: #666;
+    }
+
+    .footer .contact-info {
+      margin-bottom: 10px;
+    }
+
+    .footer .disclaimer {
+      font-size: 9px;
+      color: #999;
+      font-style: italic;
+    }
+
+    /* Empty slots for incomplete grids */
+    .empty-slot {
+      border: 2px dashed #ddd;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #999;
+      font-size: 10px;
+      text-align: center;
+      min-height: 240px;
+      background: #fafafa;
+    }
+
+    /* Print optimizations */
+    @media print {
+      .model-grid {
+        page-break-inside: avoid;
+      }
+      
+      .model-card {
+        page-break-inside: avoid;
+      }
+    }
+
+    /* Responsive adjustments for different grid sizes */
+    .grid-6 {
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    .grid-9 {
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    /* Special styling for fewer models */
+    .grid-1 {
+      grid-template-columns: 1fr;
+      max-width: 300px;
+      margin: 0 auto;
+    }
+
+    .grid-2 {
+      grid-template-columns: repeat(2, 1fr);
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .grid-4 {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <div class="header">
+    <h1>Model Comp Sheet</h1>
+    <h2>{{ campaign.title or "Casting Overview" }} — {{ timestamp.split(',')[0] if timestamp else "2024" }}</h2>
+    
+    {% if campaign.brief %}
+    <div class="brief">
+      "{{ campaign.brief }}"
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- MODEL GRID -->
+  <div class="model-grid grid-{{ grid_models|length }}">
+    {% for model in grid_models %}
+    <div class="model-card">
+      {% if model.hero_image %}
+      <img src="{{ model.hero_image }}" alt="{{ model.name }}" class="model-image">
+      {% elif model.images %}
+      <img src="{{ model.images[0] }}" alt="{{ model.name }}" class="model-image">
+      {% else %}
+      <div class="model-image" style="display: flex; align-items: center; justify-content: center; color: #999; font-size: 10px;">
+        No Image
+      </div>
+      {% endif %}
+      
+      <div class="model-info">
+        <div class="model-name">{{ model.name }}</div>
+        
+        <div class="model-details">
+          <div><strong>Height:</strong> {{ model.height_cm }}cm</div>
+          <div><strong>Hair:</strong> {{ model.hair_color | title }}</div>
+          <div><strong>Eyes:</strong> {{ model.eye_color | title }}</div>
+          {% if model.waist %}<div><strong>Waist:</strong> {{ model.waist }}</div>{% endif %}
+          <div><strong>Division:</strong> {{ model.division | title }}</div>
+        </div>
+        
+        <div class="fit-score">{{ model | calculate_fit_score }}% Match</div>
+        <div class="model-id">ID: {{ model.model_id }}</div>
+      </div>
+    </div>
+    {% endfor %}
+    
+    <!-- Fill empty slots to complete 3x3 grid if needed -->
+    {% if grid_models|length < 9 %}
+    {% for i in range(9 - grid_models|length) %}
+    <div class="empty-slot">
+      Additional models<br>available upon request
+    </div>
+    {% endfor %}
+    {% endif %}
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <div class="contact-info">
+      <strong>{{ agency.name }}</strong><br>
+      {{ agency.contact }} | {{ agency.website }}<br>
+      Generated by {{ agent_name }} on {{ timestamp.split(',')[0] if timestamp else "2024" }}
+    </div>
+    
+    <div class="disclaimer">
+      Full portfolios and additional images available upon request.<br>
+      All assets © {{ timestamp.split(',')[1].strip() if timestamp else "2024" }} {{ agency.name }}. Confidential casting material.
+    </div>
+    
+    <div style="margin-top: 15px; font-size: 8px; color: #bbb;">
+      Powered by Elysium
+    </div>
+  </div>
+
+</body>
+</html>

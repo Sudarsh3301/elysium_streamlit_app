@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ campaign.title or "Elysium Model Pitch Deck" }}</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 0.75in;
+    }
+
+    body {
+      font-family: "Helvetica Neue", Arial, sans-serif;
+      color: #222;
+      line-height: 1.4;
+    }
+
+    /* Global styles */
+    h1, h2, h3 {
+      margin: 0;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    p {
+      margin: 0.2rem 0;
+    }
+
+    .page {
+      page-break-after: always;
+    }
+
+    /* ------------------ COVER PAGE ------------------ */
+    .cover {
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      height: 100%;
+    }
+
+    .cover h1 {
+      font-size: 32px;
+      margin-bottom: 0.2in;
+      text-transform: uppercase;
+    }
+
+    .cover h2 {
+      font-size: 16px;
+      color: #666;
+      margin-bottom: 0.4in;
+    }
+
+    .cover .collage {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    .cover .collage img {
+      width: 30%;
+      height: 350px;
+      object-fit: cover;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
+
+    .cover footer {
+      font-size: 10px;
+      color: #888;
+      margin-top: 0.5in;
+    }
+
+    /* ------------------ MODEL PAGE ------------------ */
+    .model-page {
+      margin-top: 0.25in;
+    }
+
+    .model-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid #ccc;
+      margin-bottom: 0.2in;
+    }
+
+    .model-header h2 {
+      font-size: 22px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .fit-score {
+      font-size: 12px;
+      color: #666;
+    }
+
+    .hero-img {
+      width: 100%;
+      height: 400px;
+      object-fit: cover;
+      border-radius: 8px;
+      box-shadow: 0 3px 12px rgba(0,0,0,0.15);
+      margin-bottom: 0.2in;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 4px;
+      font-size: 12px;
+      border-top: 1px solid #ccc;
+      border-bottom: 1px solid #ccc;
+      padding: 0.15in 0;
+    }
+
+    .description {
+      font-size: 12px;
+      margin: 0.15in 0;
+      color: #333;
+    }
+
+    .gallery {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 10px;
+    }
+
+    .gallery img {
+      width: 32%;
+      height: 180px;
+      object-fit: cover;
+      border-radius: 6px;
+      box-shadow: 0 1px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    footer {
+      margin-top: 0.3in;
+      font-size: 10px;
+      color: #888;
+      text-align: center;
+      border-top: 1px solid #ccc;
+      padding-top: 5px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- COVER PAGE -->
+  <section class="page cover">
+    <h1>{{ campaign.title or "Campaign Pitch Deck" }}</h1>
+    <h2>{{ campaign.subtitle or campaign.date or "Curated by Athena — Powered by Elysium" }}</h2>
+
+    <div class="collage">
+      {% for img in campaign.collage_images[:3] %}
+      <img src="{{ img }}" alt="Cover Image {{ loop.index }}">
+      {% endfor %}
+    </div>
+
+    <footer>
+      © {{ current_year }} {{ campaign.agency_name or "Elysium" }}.  
+      All rights reserved. Assets used under consent.
+    </footer>
+  </section>
+
+  <!-- MODEL PAGES -->
+  {% for model in models %}
+  <section class="page model-page">
+
+    <div class="model-header">
+      <h2>{{ model.name }}</h2>
+      <span class="fit-score">AI Match Score: {{ model.fit_score or "N/A" }}</span>
+    </div>
+
+    <img src="{{ model.images[0] }}" alt="{{ model.name }} Hero Image" class="hero-img">
+
+    <div class="stats">
+      <div><strong>Height:</strong> {{ model.attributes.height }}</div>
+      <div><strong>Bust:</strong> {{ model.attributes.bust }}</div>
+      <div><strong>Waist:</strong> {{ model.attributes.waist }}</div>
+      <div><strong>Hips:</strong> {{ model.attributes.hips }}</div>
+      <div><strong>Shoes:</strong> {{ model.attributes.shoes }}</div>
+      <div><strong>Hair:</strong> {{ model.attributes.hair }}</div>
+      <div><strong>Eyes:</strong> {{ model.attributes.eyes }}</div>
+      <div><strong>Division:</strong> {{ model.division | capitalize }}</div>
+      <div><strong>Location:</strong> {{ model.location or "New York" }}</div>
+    </div>
+
+    <div class="description">
+      {{ model.description or "Versatile model suitable for this campaign theme. Experienced in editorial and commercial projects, available for upcoming bookings." }}
+    </div>
+
+    <div class="gallery">
+      {% for img in model.images[1:4] %}
+      <img src="{{ img }}" alt="{{ model.name }} Portfolio {{ loop.index }}">
+      {% endfor %}
+    </div>
+
+    <footer>
+      <p>Profile: <a href="{{ model.profile_url }}">{{ model.profile_url }}</a></p>
+      <p>Contact: bookings@apmmodels.com</p>
+      <p>© {{ current_year }} APM Models — Powered by Elysium.</p>
+    </footer>
+
+  </section>
+  {% endfor %}
+
+</body>
+</html>
