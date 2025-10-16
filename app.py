@@ -101,10 +101,10 @@ class DataLoader:
                             'height_cm': DataLoader.parse_height_to_cm(
                                 model.get('attributes', {}).get('height', '')
                             ),
-                            'hair': DataLoader.normalize_attribute(
+                            'hair_color': DataLoader.normalize_attribute(
                                 model.get('attributes', {}).get('hair', '')
                             ),
-                            'eyes': DataLoader.normalize_attribute(
+                            'eye_color': DataLoader.normalize_attribute(
                                 model.get('attributes', {}).get('eyes', '')
                             ),
                             'bust': model.get('attributes', {}).get('bust', ''),
@@ -131,21 +131,70 @@ class OllamaClient:
     
     @staticmethod
     def create_prompt(user_input: str) -> str:
-        """Create prompt template for Ollama."""
-        return f"""You are a model search assistant.
-Given a text client brief, extract structured filters as a valid JSON object.
+        """Create enhanced prompt template for Ollama with comparative and semantic filtering."""
+        return f"""You are an assistant that extracts structured search filters for a fashion model catalogue.
 
-Only return a JSON object with these keys if mentioned:
-haircolor, eyecolor, heightmin, heightmax, division.
+Given a client query, return ONLY a JSON object with these optional keys:
+hair_color, eye_color, height_min, height_max, height_relative, division, bust, waist, hips, shoes.
 
-Example:
-Input: "Looking for blonde models around 175cm with blue eyes"
+Rules:
+- If the text uses relative terms like "taller", "shorter", "petite", "above average", "below average",
+  include "height_relative": "taller"/"shorter"/"petite".
+- If no explicit height mentioned but relative term appears, leave numeric height blank.
+- Map "mainboard" or "main" → division: "ima"
+- Map "development" or "dev" → division: "dev"
+- Map "commercial" → division: "mai"
+- Map "editorial" → division: "mai"
+- For hair colors: "brunette" = "brown", "golden" = "blonde", "jet" = "black"
+- For eye colors: "aqua" = "blue", "hazel" = "green"
+
+Examples:
+
+Input: "taller blonde models with blue eyes from the development board"
 Output:
 {{
-  "haircolor": "blonde",
-  "eyecolor": "blue",
-  "heightmin": 170,
-  "heightmax": 180
+  "hair_color": "blonde",
+  "eye_color": "blue",
+  "height_relative": "taller",
+  "division": "dev"
+}}
+
+Input: "shorter brunette models"
+Output:
+{{
+  "hair_color": "brown",
+  "height_relative": "shorter"
+}}
+
+Input: "mainboard models above average height"
+Output:
+{{
+  "height_relative": "taller",
+  "division": "ima"
+}}
+
+Input: "petite commercial faces with aqua eyes"
+Output:
+{{
+  "eye_color": "blue",
+  "height_relative": "petite",
+  "division": "mai"
+}}
+
+Input: "models around 175cm with 34 inch bust"
+Output:
+{{
+  "height_min": 170,
+  "height_max": 180,
+  "bust": "34"
+}}
+
+Input: "blonde blue-eyed model less than 165cm"
+Output:
+{{
+  "hair_color": "blonde",
+  "eye_color": "blue",
+  "height_max": 165
 }}
 
 Input: "{user_input}"
@@ -191,60 +240,233 @@ Output:"""
             st.error(f"❌ Error querying Ollama: {e}")
             return None
 
+class AttributeMatcher:
+    """Handles fuzzy matching for model attributes with synonyms."""
+
+    # Synonym mappings for hair colors
+    HAIR_SYNONYMS = {
+        "blonde": ["blonde", "light", "golden", "fair"],
+        "brown": ["brown", "brunette", "dark brown", "chestnut"],
+        "black": ["black", "jet", "dark", "raven"],
+        "red": ["red", "auburn", "ginger", "copper"],
+        "gray": ["gray", "grey", "silver"],
+        "white": ["white", "platinum"]
+    }
+
+    # Synonym mappings for eye colors
+    EYE_SYNONYMS = {
+        "blue": ["blue", "aqua", "azure", "sapphire"],
+        "brown": ["brown", "hazel", "amber", "chocolate"],
+        "green": ["green", "emerald", "jade"],
+        "gray": ["gray", "grey", "silver"],
+        "black": ["black", "dark"]
+    }
+
+    @staticmethod
+    def match_attribute(search_value: str, field_value: str, attribute_type: str = "hair") -> bool:
+        """
+        Check if search_value matches field_value using synonym expansion.
+
+        Args:
+            search_value: The value being searched for (e.g., "brunette")
+            field_value: The actual field value (e.g., "brown")
+            attribute_type: Either "hair" or "eye"
+        """
+        if not search_value or not field_value:
+            return False
+
+        search_lower = str(search_value).lower().strip()
+        field_lower = str(field_value).lower().strip()
+
+        # Direct match
+        if search_lower in field_lower or field_lower in search_lower:
+            return True
+
+        # Synonym matching
+        synonyms = AttributeMatcher.HAIR_SYNONYMS if attribute_type == "hair" else AttributeMatcher.EYE_SYNONYMS
+
+        for canonical, synonym_list in synonyms.items():
+            # If search term is in synonym list, check if field matches canonical or any synonym
+            if search_lower in synonym_list:
+                if canonical in field_lower or any(syn in field_lower for syn in synonym_list):
+                    return True
+
+            # If field value is in synonym list, check if search matches canonical or any synonym
+            if field_lower in synonym_list:
+                if canonical == search_lower or search_lower in synonym_list:
+                    return True
+
+        return False
+
+class DivisionMapper:
+    """Handles semantic division mapping and normalization."""
+
+    DIVISION_MAPPINGS = {
+        "mainboard": "ima",
+        "main": "ima",
+        "ima": "ima",
+        "development": "dev",
+        "dev": "dev",
+        "commercial": "mai",
+        "mai": "mai",
+        "editorial": "mai"
+    }
+
+    @staticmethod
+    def normalize_division(division_term: str) -> str:
+        """
+        Normalize semantic division terms to actual division codes.
+
+        Args:
+            division_term: The division term to normalize (e.g., "mainboard", "development")
+
+        Returns:
+            Normalized division code (e.g., "ima", "dev", "mai") or original term if no mapping
+        """
+        if not division_term:
+            return ""
+
+        term_lower = str(division_term).lower().strip()
+        return DivisionMapper.DIVISION_MAPPINGS.get(term_lower, term_lower)
+
+class HeightCalculator:
+    """Handles relative height calculations and filtering."""
+
+    @staticmethod
+    def calculate_relative_height_range(df: pd.DataFrame, relative_term: str) -> tuple:
+        """
+        Calculate height range based on relative terms.
+
+        Args:
+            df: DataFrame containing height data
+            relative_term: "taller", "shorter", or "petite"
+
+        Returns:
+            Tuple of (min_height, max_height) or (None, None) if invalid
+        """
+        if df.empty or 'height_cm' not in df.columns:
+            return (None, None)
+
+        avg_height = df['height_cm'].mean()
+
+        if relative_term == "taller":
+            return (avg_height + 3, 300)  # Above average + 3cm
+        elif relative_term == "shorter":
+            return (0, avg_height - 3)    # Below average - 3cm
+        elif relative_term == "petite":
+            return (0, 165)               # Under 165cm
+        else:
+            return (None, None)
+
 class FilterEngine:
-    """Handles filtering logic for models."""
-    
+    """Handles filtering logic for models with enhanced comparative and semantic filtering."""
+
     @staticmethod
     def apply_filters(df: pd.DataFrame,
                      hair_colors: Optional[List[str]] = None,
                      eye_colors: Optional[List[str]] = None,
                      height_range: Optional[tuple] = None,
+                     divisions: Optional[List[str]] = None,
                      ai_filters: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
-        """Apply combined manual and AI filters to the dataset."""
-        filtered_df = df.copy()
-        
-        # Apply manual filters
-        if hair_colors:
-            filtered_df = filtered_df[
-                filtered_df['hair'].str.contains('|'.join(hair_colors), case=False, na=False)
-            ]
-        
-        if eye_colors:
-            filtered_df = filtered_df[
-                filtered_df['eyes'].str.contains('|'.join(eye_colors), case=False, na=False)
-            ]
-        
-        if height_range:
-            min_height, max_height = height_range
-            filtered_df = filtered_df[
-                (filtered_df['height_cm'] >= min_height) & 
-                (filtered_df['height_cm'] <= max_height)
-            ]
-        
-        # Apply AI filters
-        if ai_filters:
-            if 'haircolor' in ai_filters:
+        """Apply unified filtering pipeline with comparative, semantic, and fuzzy matching."""
+        if df.empty:
+            return df
+
+        # Combine all filters into a single unified filter dict
+        unified_filters = {}
+
+        # Add manual filters
+        if hair_colors and len(hair_colors) > 0:
+            unified_filters['hair_color'] = hair_colors[0]  # Take first selection for now
+        if eye_colors and len(eye_colors) > 0:
+            unified_filters['eye_color'] = eye_colors[0]    # Take first selection for now
+        if height_range and len(height_range) == 2:
+            unified_filters['height_min'], unified_filters['height_max'] = height_range
+        if divisions and len(divisions) > 0:
+            unified_filters['division'] = divisions[0]      # Take first selection for now
+
+        # Add AI filters (they override manual filters)
+        if ai_filters and isinstance(ai_filters, dict):
+            unified_filters.update(ai_filters)
+
+        return FilterEngine._apply_unified_filters(df, unified_filters)
+
+    @staticmethod
+    def _apply_unified_filters(df: pd.DataFrame, filters: Dict[str, Any]) -> pd.DataFrame:
+        """Apply unified filtering logic with all enhancements."""
+        try:
+            filtered_df = df.copy()
+
+            # Hair color filtering with fuzzy matching
+            if filters.get("hair_color"):
+                hair_value = str(filters["hair_color"]).lower()
                 filtered_df = filtered_df[
-                    filtered_df['hair'].str.contains(ai_filters['haircolor'], case=False, na=False)
+                    filtered_df["hair_color"].apply(
+                        lambda x: AttributeMatcher.match_attribute(hair_value, x, "hair")
+                    )
                 ]
-            
-            if 'eyecolor' in ai_filters:
+
+            # Eye color filtering with fuzzy matching
+            if filters.get("eye_color"):
+                eye_value = str(filters["eye_color"]).lower()
                 filtered_df = filtered_df[
-                    filtered_df['eyes'].str.contains(ai_filters['eyecolor'], case=False, na=False)
+                    filtered_df["eye_color"].apply(
+                        lambda x: AttributeMatcher.match_attribute(eye_value, x, "eye")
+                    )
                 ]
-            
-            if 'heightmin' in ai_filters:
-                filtered_df = filtered_df[filtered_df['height_cm'] >= ai_filters['heightmin']]
-            
-            if 'heightmax' in ai_filters:
-                filtered_df = filtered_df[filtered_df['height_cm'] <= ai_filters['heightmax']]
-            
-            if 'division' in ai_filters:
+
+            # Numeric height filters with variance tolerance
+            if filters.get("height_min") or filters.get("height_max"):
+                min_h = filters.get("height_min", 0)
+                max_h = filters.get("height_max", 300)
+
+                # Add variance tolerance (±3cm) for more flexible matching
+                variance = 3
+                min_h_with_variance = max(0, min_h - variance) if min_h > 0 else 0
+                max_h_with_variance = max_h + variance if max_h < 300 else 300
+
                 filtered_df = filtered_df[
-                    filtered_df['division'].str.contains(ai_filters['division'], case=False, na=False)
+                    (filtered_df["height_cm"] >= min_h_with_variance) &
+                    (filtered_df["height_cm"] <= max_h_with_variance)
                 ]
-        
-        return filtered_df
+
+            # Relative height filters
+            if filters.get("height_relative"):
+                height_range = HeightCalculator.calculate_relative_height_range(
+                    df, filters["height_relative"]
+                )
+                if height_range[0] is not None and height_range[1] is not None:
+                    min_h, max_h = height_range
+                    filtered_df = filtered_df[
+                        (filtered_df["height_cm"] >= min_h) & (filtered_df["height_cm"] <= max_h)
+                    ]
+
+            # Division filtering with semantic mapping
+            if filters.get("division"):
+                normalized_div = DivisionMapper.normalize_division(filters["division"])
+                if normalized_div:
+                    filtered_df = filtered_df[
+                        filtered_df["division"].str.lower().str.contains(normalized_div, na=False)
+                    ]
+
+            # Additional attribute filters (bust, waist, hips, shoes)
+            for attr in ["bust", "waist", "hips", "shoes"]:
+                if filters.get(attr):
+                    attr_value = str(filters[attr])
+                    # Extract numeric part for comparison
+                    import re
+                    numeric_match = re.search(r'\d+', attr_value)
+                    if numeric_match:
+                        target_value = int(numeric_match.group())
+                        filtered_df = filtered_df[
+                            filtered_df[attr].str.contains(str(target_value), na=False)
+                        ]
+
+            return filtered_df
+
+        except Exception as e:
+            logger.warning(f"Error applying unified filters: {e}")
+            return df
 
 class ImageHandler:
     """Handles local image loading and fallbacks."""
@@ -326,10 +548,10 @@ def display_model_card(model_data: Dict[str, Any], col):
             # Attributes in a compact format
             attr_col1, attr_col2 = st.columns(2)
             with attr_col1:
-                st.markdown(f"👁️ {model_data['eyes'].title()}")
+                st.markdown(f"👁️ {model_data['eye_color'].title()}")
                 st.markdown(f"📏 {model_data['height_cm']} cm")
             with attr_col2:
-                st.markdown(f"💇 {model_data['hair'].title()}")
+                st.markdown(f"💇 {model_data['hair_color'].title()}")
 
             # View Portfolio button
             if st.button(
@@ -388,8 +610,8 @@ def show_expanded_model_view(model_data: Dict[str, Any], filtered_df: pd.DataFra
 
     with detail_cols[0]:
         st.markdown(f"**Height:** {model_data['height_cm']} cm")
-        st.markdown(f"**Hair:** {model_data['hair'].title()}")
-        st.markdown(f"**Eyes:** {model_data['eyes'].title()}")
+        st.markdown(f"**Hair:** {model_data['hair_color'].title()}")
+        st.markdown(f"**Eyes:** {model_data['eye_color'].title()}")
 
     with detail_cols[1]:
         if model_data.get('bust'):
@@ -441,7 +663,7 @@ def show_expanded_model_view(model_data: Dict[str, Any], filtered_df: pd.DataFra
         with carousel_container:
             try:
                 # Create a centered container for the main image
-                col1, col2, col3 = st.columns([1, 2, 1])
+                _, col2, _ = st.columns([1, 2, 1])
                 with col2:
                     st.image(
                         valid_images[current_carousel_index],
@@ -692,13 +914,15 @@ def main():
         st.sidebar.header("🔍 Manual Filters")
 
         # Get unique values for filters
-        unique_hair_colors = sorted(df['hair'].dropna().unique())
-        unique_eye_colors = sorted(df['eyes'].dropna().unique())
+        unique_hair_colors = sorted(df['hair_color'].dropna().unique())
+        unique_eye_colors = sorted(df['eye_color'].dropna().unique())
+        unique_divisions = sorted(df['division'].dropna().unique())
         min_height, max_height = int(df['height_cm'].min()), int(df['height_cm'].max())
 
         # Manual filter controls
         selected_hair = st.sidebar.multiselect("Hair Color", unique_hair_colors)
         selected_eyes = st.sidebar.multiselect("Eye Color", unique_eye_colors)
+        selected_divisions = st.sidebar.multiselect("Division", unique_divisions)
         height_range = st.sidebar.slider(
             "Height Range (cm)",
             min_height, max_height,
@@ -707,6 +931,10 @@ def main():
 
         if st.sidebar.button("🔄 Reset Filters"):
             st.session_state.ai_filters = {}
+            # Clear manual filters by rerunning with empty session state
+            for key in list(st.session_state.keys()):
+                if key.startswith('multiselect') or key.startswith('slider'):
+                    del st.session_state[key]
             st.rerun()
 
         # Main area - AI Query
@@ -746,6 +974,7 @@ def main():
             hair_colors=selected_hair,
             eye_colors=selected_eyes,
             height_range=height_range,
+            divisions=selected_divisions,
             ai_filters=st.session_state.ai_filters
         )
     else:

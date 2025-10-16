@@ -61,10 +61,10 @@ Input: "Looking for blonde models with blue eyes around 175 cm"
 4. Display the parsed JSON filters:
    ```json
    {
-     "haircolor": "blonde",
-     "eyecolor": "blue",
-     "heightmin": 170,
-     "heightmax": 180
+     "hair_color": "blonde",
+     "eye_color": "blue",
+     "height_min": 170,
+     "height_max": 180
    }
    ```
 5. Show how the grid updates with matching models
@@ -77,8 +77,8 @@ Input: "Show me 2 tall brunette models for a lifestyle campaign"
 **Expected AI parsing:**
 ```json
 {
-  "haircolor": "brunette",
-  "heightmin": 175
+  "hair_color": "brunette",
+  "height_min": 175
 }
 ```
 
@@ -90,8 +90,48 @@ Input: "Find models with green eyes from the dev division"
 **Expected AI parsing:**
 ```json
 {
-  "eyecolor": "green",
+  "eye_color": "green",
   "division": "dev"
+}
+```
+
+**Demo Query 4: Comparative Height Search**
+```
+Input: "Show me taller models than average with brown hair"
+```
+
+**Expected AI parsing:**
+```json
+{
+  "hair_color": "brown",
+  "height_relative": "taller"
+}
+```
+
+**Demo Query 5: Semantic Division Search**
+```
+Input: "I want mainboard models who are blonde and blue-eyed"
+```
+
+**Expected AI parsing:**
+```json
+{
+  "hair_color": "blonde",
+  "eye_color": "blue",
+  "division": "ima"
+}
+```
+
+**Demo Query 6: Petite Models Search**
+```
+Input: "Give me petite commercial models"
+```
+
+**Expected AI parsing:**
+```json
+{
+  "height_relative": "petite",
+  "division": "mai"
 }
 ```
 
