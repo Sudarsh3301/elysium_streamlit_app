@@ -42,6 +42,15 @@ def get_image_base64(image_path: str) -> str:
         # Return a small transparent pixel as fallback
         return "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
 
+def get_model_index_in_filtered(model_id: str, filtered_df: pd.DataFrame) -> int:
+    """Get the index of a model in the filtered dataframe."""
+    try:
+        # Convert to list and find index
+        model_ids = filtered_df['model_id'].tolist()
+        return model_ids.index(model_id)
+    except (ValueError, KeyError):
+        return 0
+
 class DataLoader:
     """Handles loading and normalizing model data from JSONL."""
     
@@ -333,16 +342,41 @@ def display_model_card(model_data: Dict[str, Any], col):
 
             st.markdown("---")
 
-def show_expanded_model_view(model_data: Dict[str, Any]):
+def show_expanded_model_view(model_data: Dict[str, Any], filtered_df: pd.DataFrame):
     """Display expanded model view with full details and image gallery."""
 
-    # Header Section
-    st.markdown(f"### {model_data['name']} ({model_data['division'].upper()})")
+    # Header Section with Navigation
+    nav_col1, nav_col2, nav_col3 = st.columns([1, 2, 1])
 
-    # Back button
-    if st.button("← Back to Catalogue", type="secondary"):
-        st.session_state.selected_model = None
-        st.rerun()
+    with nav_col1:
+        if st.button("← Back to Catalogue", type="secondary"):
+            st.session_state.selected_model = None
+            st.rerun()
+
+    with nav_col2:
+        st.markdown(f"### {model_data['name']} ({model_data['division'].upper()})")
+
+    with nav_col3:
+        # Navigation buttons
+        current_index = get_model_index_in_filtered(model_data['model_id'], filtered_df)
+        total_models = len(filtered_df)
+
+        if total_models > 1:
+            nav_buttons_col1, nav_buttons_col2 = st.columns(2)
+
+            with nav_buttons_col1:
+                if st.button("⬅️ Previous", disabled=(current_index <= 0)):
+                    prev_model = filtered_df.iloc[current_index - 1]
+                    st.session_state.selected_model = prev_model['model_id']
+                    st.rerun()
+
+            with nav_buttons_col2:
+                if st.button("➡️ Next", disabled=(current_index >= total_models - 1)):
+                    next_model = filtered_df.iloc[current_index + 1]
+                    st.session_state.selected_model = next_model['model_id']
+                    st.rerun()
+
+            st.caption(f"Model {current_index + 1} of {total_models}")
 
     st.markdown("---")
 
@@ -373,13 +407,55 @@ def show_expanded_model_view(model_data: Dict[str, Any]):
 
     st.markdown("---")
 
-    # Image Gallery Section
+    # Image Gallery Section with Carousel
     st.subheader("📸 Portfolio Gallery")
 
     valid_images = ImageHandler.get_valid_images(model_data)
 
     if valid_images:
-        # Display images in rows of 4
+        # Initialize carousel state
+        if f'carousel_index_{model_data["model_id"]}' not in st.session_state:
+            st.session_state[f'carousel_index_{model_data["model_id"]}'] = 0
+
+        current_carousel_index = st.session_state[f'carousel_index_{model_data["model_id"]}']
+        total_images = len(valid_images)
+
+        # Carousel controls
+        carousel_col1, carousel_col2, carousel_col3 = st.columns([1, 2, 1])
+
+        with carousel_col1:
+            if st.button("⬅️ Previous Image", disabled=(current_carousel_index <= 0), key=f"prev_img_{model_data['model_id']}"):
+                st.session_state[f'carousel_index_{model_data["model_id"]}'] -= 1
+                st.rerun()
+
+        with carousel_col2:
+            st.markdown(f"**Image {current_carousel_index + 1} of {total_images}**")
+
+        with carousel_col3:
+            if st.button("➡️ Next Image", disabled=(current_carousel_index >= total_images - 1), key=f"next_img_{model_data['model_id']}"):
+                st.session_state[f'carousel_index_{model_data["model_id"]}'] += 1
+                st.rerun()
+
+        # Display current image in carousel with controlled sizing
+        carousel_container = st.container()
+        with carousel_container:
+            try:
+                # Create a centered container for the main image
+                col1, col2, col3 = st.columns([1, 2, 1])
+                with col2:
+                    st.image(
+                        valid_images[current_carousel_index],
+                        width=400,  # Fixed width to prevent stretching
+                        caption=f"Portfolio Image {current_carousel_index + 1}"
+                    )
+            except Exception as e:
+                st.error(f"Could not load image: {e}")
+
+        # Thumbnail strip below main image
+        st.markdown("---")
+        st.markdown("**All Images:**")
+
+        # Display all images in a grid for quick navigation
         images_per_row = 4
         rows = len(valid_images) // images_per_row + (1 if len(valid_images) % images_per_row > 0 else 0)
 
@@ -390,13 +466,25 @@ def show_expanded_model_view(model_data: Dict[str, Any]):
                 if img_idx < len(valid_images):
                     with cols[col_idx]:
                         try:
-                            st.image(
-                                valid_images[img_idx],
-                                width="stretch",
-                                caption=f"Image {img_idx + 1}"
+                            # Make thumbnail clickable to jump to that image
+                            if st.button(f"📷", key=f"thumb_{model_data['model_id']}_{img_idx}", help=f"Jump to image {img_idx + 1}"):
+                                st.session_state[f'carousel_index_{model_data["model_id"]}'] = img_idx
+                                st.rerun()
+
+                            # Show thumbnail with border if it's the current image
+                            border_style = "border: 3px solid #667eea;" if img_idx == current_carousel_index else "border: 1px solid #ddd;"
+                            st.markdown(
+                                f"""
+                                <div style="{border_style} border-radius: 8px; padding: 2px;">
+                                    <img src="data:image/jpeg;base64,{get_image_base64(valid_images[img_idx])}"
+                                         style="width: 100%; height: 80px; object-fit: cover; border-radius: 6px;"
+                                         alt="Thumbnail {img_idx + 1}"/>
+                                </div>
+                                """,
+                                unsafe_allow_html=True
                             )
                         except Exception as e:
-                            st.error(f"Could not load image: {e}")
+                            st.error(f"Could not load thumbnail: {e}")
     else:
         st.info("No local images available for this model.")
         # Show remote thumbnail if available
@@ -472,6 +560,16 @@ def main():
         border-radius: 10px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         margin-bottom: 1rem;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .model-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        background: #f8f9fa;
     }
 
     /* Thumbnail image sizing - force consistent dimensions */
@@ -497,6 +595,15 @@ def main():
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
+    }
+
+    /* Carousel main image styling */
+    .carousel-main-image {
+        max-width: 400px !important;
+        max-height: 500px !important;
+        object-fit: contain !important;
+        margin: 0 auto !important;
+        display: block !important;
     }
 
     .stButton > button {
@@ -574,6 +681,10 @@ def main():
         st.session_state.ai_filters = {}
     if 'selected_model' not in st.session_state:
         st.session_state.selected_model = None
+    if 'current_model_index' not in st.session_state:
+        st.session_state.current_model_index = 0
+    if 'hover_model' not in st.session_state:
+        st.session_state.hover_model = None
 
     # Only show filters and search when not in expanded view
     if not st.session_state.selected_model:
@@ -646,15 +757,16 @@ def main():
         # Find the selected model data
         selected_model_data = df[df['model_id'] == st.session_state.selected_model]
         if not selected_model_data.empty:
-            show_expanded_model_view(selected_model_data.iloc[0].to_dict())
+            show_expanded_model_view(selected_model_data.iloc[0].to_dict(), filtered_df)
         else:
             st.error("Selected model not found.")
             st.session_state.selected_model = None
+            # Show grid if model not found
+            st.subheader(f"📊 Results: Displaying {min(len(filtered_df), 20)} of {len(df)} models")
+            display_model_grid(filtered_df)
     else:
-        # Display results count
+        # Display results count and model grid only when not in expanded view
         st.subheader(f"📊 Results: Displaying {min(len(filtered_df), 20)} of {len(df)} models")
-
-        # Display model grid
         display_model_grid(filtered_df)
 
 if __name__ == "__main__":
