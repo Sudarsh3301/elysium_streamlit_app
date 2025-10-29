@@ -29,7 +29,7 @@ st.set_page_config(
 )
 
 # Constants
-MODELS_FILE = "../elysium_kb/models.jsonl"
+MODELS_FILE = "out/models_normalized.csv"
 OLLAMA_URL = "http://localhost:11434/api/generate"
 OLLAMA_MODEL = "gemma3:4b"  # Using available model
 
@@ -83,49 +83,47 @@ class DataLoader:
 
     @staticmethod
     def load_and_normalize_models(file_path: str) -> pd.DataFrame:
-        """Load models from JSONL and normalize data."""
-        models = []
-        
+        """Load models from CSV and normalize data."""
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                for line in f:
-                    if line.strip():
-                        model = json.loads(line)
-                        
-                        # Flatten and normalize data
-                        normalized_model = {
-                            'model_id': model.get('model_id', ''),
-                            'name': model.get('name', '').strip(),
-                            'division': model.get('division', ''),
-                            'profile_url': model.get('profile_url', ''),
-                            'thumbnail': model.get('thumbnail', ''),
-                            'height_cm': DataLoader.parse_height_to_cm(
-                                model.get('attributes', {}).get('height', '')
-                            ),
-                            'hair_color': DataLoader.normalize_attribute(
-                                model.get('attributes', {}).get('hair', '')
-                            ),
-                            'eye_color': DataLoader.normalize_attribute(
-                                model.get('attributes', {}).get('eyes', '')
-                            ),
-                            'bust': model.get('attributes', {}).get('bust', ''),
-                            'waist': model.get('attributes', {}).get('waist', ''),
-                            'hips': model.get('attributes', {}).get('hips', ''),
-                            'shoes': model.get('attributes', {}).get('shoes', ''),
-                            'images': model.get('images', [])
-                        }
-                        models.append(normalized_model)
-                        
+            # Load CSV file
+            df = pd.read_csv(file_path)
+
+            # Ensure required columns exist
+            required_columns = ['name', 'division', 'height_cm', 'hair_color', 'eye_color']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+
+            if missing_columns:
+                st.error(f"Missing required columns in CSV: {missing_columns}")
+                return pd.DataFrame()
+
+            # Normalize data
+            df['hair_color'] = df['hair_color'].fillna('').astype(str).str.lower().str.strip()
+            df['eye_color'] = df['eye_color'].fillna('').astype(str).str.lower().str.strip()
+            df['name'] = df['name'].fillna('').astype(str).str.strip()
+            df['division'] = df['division'].fillna('').astype(str).str.strip()
+
+            # Ensure height_cm is numeric
+            df['height_cm'] = pd.to_numeric(df['height_cm'], errors='coerce').fillna(0).astype(int)
+
+            # Add missing columns if they don't exist
+            if 'model_id' not in df.columns:
+                df['model_id'] = df.index.astype(str)
+            if 'profile_url' not in df.columns:
+                df['profile_url'] = ''
+            if 'thumbnail' not in df.columns:
+                df['thumbnail'] = df.get('images', '')
+            if 'images' not in df.columns:
+                df['images'] = df.get('thumbnail', '')
+
+            logger.info(f"Loaded {len(df)} models from {file_path}")
+            return df
+
         except FileNotFoundError:
             st.error(f"Models file not found: {file_path}")
             return pd.DataFrame()
         except Exception as e:
             st.error(f"Error loading models: {e}")
             return pd.DataFrame()
-        
-        df = pd.DataFrame(models)
-        logger.info(f"Loaded {len(df)} models from {file_path}")
-        return df
 
 class OllamaClient:
     """Handles AI query parsing using Ollama."""
@@ -752,21 +750,47 @@ def display_model_grid(filtered_df: pd.DataFrame, max_results: int = 20):
 def main():
     """Main Streamlit application."""
 
-    # Custom CSS for better styling
+    # Apply main app styling - will be overridden by Apollo if needed
     st.markdown("""
     <style>
+    /* Main app styling - light theme (default) */
     .stApp {
         background-color: #f8f9fa;
     }
 
-    /* Ensure text is visible with dark text */
-    .stMarkdown, .stText, .stCaption, p, div, span {
-        color: #262730 !important;
+    /* Ensure text is visible with dark text (default) */
+    .stApp .stMarkdown,
+    .stApp .stText,
+    .stApp .stCaption,
+    .stApp p,
+    .stApp div,
+    .stApp span,
+    .stApp h1,
+    .stApp h2,
+    .stApp h3,
+    .stApp h4,
+    .stApp h5,
+    .stApp h6 {
+        color: #262730;
     }
 
     /* Force dark text for markdown content */
-    .stMarkdown p, .stMarkdown div {
-        color: #262730 !important;
+    .stApp .stMarkdown p,
+    .stApp .stMarkdown div,
+    .stApp .stMarkdown span {
+        color: #262730;
+    }
+
+    /* Sidebar styling */
+    .stSidebar {
+        background-color: #ffffff;
+    }
+
+    .stSidebar .stMarkdown,
+    .stSidebar p,
+    .stSidebar div,
+    .stSidebar span {
+        color: #262730;
     }
 
     .main-header {
@@ -837,8 +861,8 @@ def main():
         width: 100%;
     }
 
-    /* Container styling for model cards */
-    .stContainer > div {
+    /* Container styling for model cards - only for main app */
+    .stApp:not([data-theme="apollo"]) .stContainer > div {
         background-color: #ffffff;
         border-radius: 10px;
         padding: 15px;
@@ -888,8 +912,28 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
+    # Initialize session state first
+    if 'ai_filters' not in st.session_state:
+        st.session_state.ai_filters = {}
+    if 'selected_model' not in st.session_state:
+        st.session_state.selected_model = None
+    if 'current_model_index' not in st.session_state:
+        st.session_state.current_model_index = 0
+    if 'hover_model' not in st.session_state:
+        st.session_state.hover_model = None
+    if 'current_tab' not in st.session_state:
+        st.session_state.current_tab = 'Catalogue'
+
+    # Apollo-specific session state
+    if 'selected_models' not in st.session_state:
+        st.session_state.selected_models = []
+    if 'selected_clients' not in st.session_state:
+        st.session_state.selected_clients = []
+    if 'active_tab' not in st.session_state:
+        st.session_state.active_tab = "Catalogue"
+
     # Create tabs
-    tab1, tab2 = st.tabs(["📚 Catalogue", "🏛️ Athena"])
+    tab1, tab2, tab3 = st.tabs(["📚 Catalogue", "🏛️ Athena", "📊 Apollo"])
 
     # Initialize Athena UI
     athena_ui = AthenaUI()
@@ -908,18 +952,9 @@ def main():
     # Cache dataframe for Athena
     st.session_state.df_cache = df
 
-    # Initialize session state
-    if 'ai_filters' not in st.session_state:
-        st.session_state.ai_filters = {}
-    if 'selected_model' not in st.session_state:
-        st.session_state.selected_model = None
-    if 'current_model_index' not in st.session_state:
-        st.session_state.current_model_index = 0
-    if 'hover_model' not in st.session_state:
-        st.session_state.hover_model = None
-
     # Catalogue Tab
     with tab1:
+        st.session_state.current_tab = 'Catalogue'
         # Only show filters and search when not in expanded view
         if not st.session_state.selected_model:
             # Sidebar filters
@@ -1012,7 +1047,22 @@ def main():
 
     # Athena Tab
     with tab2:
+        st.session_state.current_tab = 'Athena'
         athena_ui.render_athena_tab(df)
+
+    # Apollo Tab
+    with tab3:
+        st.session_state.current_tab = 'Apollo'
+        try:
+            # Import Apollo module
+            from pages.apollo import main as apollo_main
+            apollo_main()
+        except ImportError as e:
+            st.error(f"❌ Failed to load Apollo dashboard: {e}")
+            st.info("Please ensure apollo.py is in the pages/ directory.")
+        except Exception as e:
+            st.error(f"❌ Apollo dashboard error: {e}")
+            st.info("Please check that all required data files are available in the out/ directory.")
 
 if __name__ == "__main__":
     main()

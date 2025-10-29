@@ -1,0 +1,39 @@
+client_id,client_name,industry,region,vip
+C001,Balenciaga Milan,Beauty (High-End),New York,0
+C002,Celine,Editorial,New York,1
+C003,Dior,Luxury Fashion,Paris,0
+C004,Dior,Beauty (High-End),London,0
+C005,Hermès,Editorial,New York,0
+C006,V Magazine,Beauty (High-End),Paris,0
+C007,Armani Beauty,Beauty (High-End),New York,1
+C008,Celine Beauty,Beauty (High-End),New York,0
+C009,Numéro Beauty,Beauty (High-End),New York,0
+C010,Dior Beauty,Luxury Fashion,New York,0
+C011,Armani Beauty,Beauty (High-End),Paris,0
+C012,Tom Ford Beauty Editorial,Editorial,Milan,1
+C013,Lancôme,Luxury Fashion,London,0
+C014,Numéro,Luxury Fashion,Milan,0
+C015,Armani Beauty Milan,Beauty (High-End),London,0
+C016,Armani Beauty,Beauty (High-End),Milan,0
+C017,Hermès,Beauty (High-End),New York,0
+C018,Dior Beauty,Luxury Fashion,Milan,1
+C019,Chanel,Luxury Fashion,Milan,1
+C020,Harper's Bazaar,Luxury Fashion,Paris,0
+C021,V Magazine Milan,Luxury Fashion,New York,0
+C022,Versace,Beauty (High-End),London,1
+C023,Tom Ford Beauty,Luxury Fashion,Paris,1
+C024,Celine,Editorial,London,0
+C025,Louis Vuitton,Beauty (High-End),Paris,1
+C026,Elle Beauty,Luxury Fashion,Milan,1
+C027,Bottega Veneta Runway,Editorial,London,1
+C028,Gucci,Beauty (High-End),Paris,1
+C029,Armani Beauty,Luxury Fashion,Milan,1
+C030,Tom Ford Beauty,Editorial,Paris,1
+C031,Chanel,Editorial,London,0
+C032,Harper's Bazaar,Beauty (High-End),London,1
+C033,Burberry Beauty,Beauty (High-End),Paris,0
+C034,Louis Vuitton Paris,Beauty (High-End),Milan,1
+C035,Dior Beauty Runway,Luxury Fashion,Paris,0
+C036,Saint Laurent,Beauty (High-End),Milan,0
+C037,Louis Vuitton,Editorial,New York,0
+C038,Versace,Editorial,Milan,0
