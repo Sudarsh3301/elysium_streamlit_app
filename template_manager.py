@@ -11,6 +11,9 @@ from datetime import datetime
 from pathlib import Path
 import logging
 
+# Import centralized path management
+from path_config import paths, get_image_path
+
 # Optional imports for template rendering
 try:
     from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -170,13 +173,9 @@ class TemplateManager:
             # Process images - ensure we have local paths
             processed_images = []
             for img_path in processed_model['images']:
-                if not os.path.isabs(img_path):
-                    local_path = os.path.join("..", "elysium_kb", img_path.lstrip('/'))
-                    if os.path.exists(local_path):
-                        processed_images.append(local_path)
-                else:
-                    if os.path.exists(img_path):
-                        processed_images.append(img_path)
+                resolved_path = get_image_path(img_path)
+                if resolved_path and resolved_path.exists():
+                    processed_images.append(str(resolved_path))
             
             processed_model['images'] = processed_images
             processed_model['hero_image'] = processed_images[0] if processed_images else None

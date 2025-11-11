@@ -588,46 +588,79 @@ def generate_predictive_insights(data: dict) -> list:
 
 def render_insight_card(insight: dict, index: int, data: dict = None):
     """Render a single predictive insight card with model thumbnails."""
-    cta_color = "#2EF0FF" if insight['cta_type'] == 'promote' else "#00FF88"
-    cta_text = "Promote (Athena)" if insight['cta_type'] == 'promote' else "Scout (Artemis)"
+    try:
+        # Validate insight structure and provide defaults
+        icon = insight.get('icon', '💡')
+        title = insight.get('title', 'Insight')
+        description = insight.get('description', 'No description available')
+        action = insight.get('action', 'Take action')
+        cta_type = insight.get('cta_type', 'promote')
 
-    st.markdown(f"""
-    <div class="premium-card" style="margin-bottom: 1rem;">
-        <div style="display: flex; align-items: center; margin-bottom: 1rem;">
-            <span style="font-size: 2rem; margin-right: 1rem;">{insight['icon']}</span>
-            <h4 style="color: #2EF0FF; margin: 0;">{insight['title']}</h4>
+        cta_color = "#2EF0FF" if cta_type == 'promote' else "#00FF88"
+        cta_text = "Promote (Athena)" if cta_type == 'promote' else "Scout (Artemis)"
+
+        st.markdown(f"""
+        <div class="premium-card" style="margin-bottom: 1rem;">
+            <div style="display: flex; align-items: center; margin-bottom: 1rem;">
+                <span style="font-size: 2rem; margin-right: 1rem;">{icon}</span>
+                <h4 style="color: #2EF0FF; margin: 0;">{title}</h4>
+            </div>
+            <p style="color: #E0E0E0; margin-bottom: 1rem; line-height: 1.5;">{description}</p>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: #B0B0B0; font-size: 0.9rem;">→ {action}</span>
+                <button class="apollo-cta" style="background: {cta_color};" onclick="alert('Navigating to {cta_text}...')">{cta_text}</button>
+            </div>
         </div>
-        <p style="color: #E0E0E0; margin-bottom: 1rem; line-height: 1.5;">{insight['description']}</p>
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="color: #B0B0B0; font-size: 0.9rem;">→ {insight['action']}</span>
-            <button class="apollo-cta" style="background: {cta_color};" onclick="alert('Navigating to {cta_text}...')">{cta_text}</button>
+        """, unsafe_allow_html=True)
+
+    except Exception as e:
+        # Fallback card if there's an error
+        st.markdown(f"""
+        <div class="premium-card" style="margin-bottom: 1rem; border: 1px solid #FF4444;">
+            <div style="display: flex; align-items: center; margin-bottom: 1rem;">
+                <span style="font-size: 2rem; margin-right: 1rem;">⚠️</span>
+                <h4 style="color: #FF4444; margin: 0;">Insight Error</h4>
+            </div>
+            <p style="color: #E0E0E0; margin-bottom: 1rem; line-height: 1.5;">Unable to load insight data properly.</p>
         </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
+        return
 
     # Add matching model thumbnails if data available
-    if data and not data['models'].empty:
-        # Get matching models based on insight type
-        matching_models = []
-        if insight['cta_type'] == 'promote':
-            # Get top performers
-            if not data['performance'].empty:
-                top_models = data['performance'].merge(
-                    data['models'], on='model_id', how='left'
-                ).sort_values('revenue_total_usd', ascending=False).head(2)
-                matching_models = top_models.to_dict('records')
-        else:
-            # Get random sample for scouting
-            matching_models = data['models'].sample(min(2, len(data['models']))).to_dict('records')
+    try:
+        if data and isinstance(data, dict) and 'models' in data and not data['models'].empty:
+            # Get matching models based on insight type
+            matching_models = []
+            cta_type = insight.get('cta_type', 'promote')
 
-        if matching_models:
-            st.markdown("**Matching Models:**")
-            thumb_cols = st.columns(min(2, len(matching_models)))
+            if cta_type == 'promote':
+                # Get top performers
+                if 'performance' in data and not data['performance'].empty:
+                    try:
+                        top_models = data['performance'].merge(
+                            data['models'], on='model_id', how='left'
+                        ).sort_values('revenue_total_usd', ascending=False).head(2)
+                        matching_models = top_models.to_dict('records')
+                    except Exception:
+                        # Fallback to random models if merge fails
+                        matching_models = data['models'].sample(min(2, len(data['models']))).to_dict('records')
+            else:
+                # Get random sample for scouting
+                matching_models = data['models'].sample(min(2, len(data['models']))).to_dict('records')
 
-            for i, model in enumerate(matching_models):
-                with thumb_cols[i]:
-                    thumbnail_path = model.get('primary_thumbnail',
-                                             apollo_image_handler.get_primary_thumbnail(model))
+            if matching_models and len(matching_models) > 0:
+                st.markdown("**Matching Models:**")
+                thumb_cols = st.columns(min(2, len(matching_models)))
+
+                for i, model in enumerate(matching_models):
+                    if isinstance(model, dict) and 'model_id' in model:
+                        with thumb_cols[i]:
+                            thumbnail_path = model.get('primary_thumbnail')
+                            if not thumbnail_path:
+                                try:
+                                    thumbnail_path = apollo_image_handler.get_primary_thumbnail(model)
+                                except Exception:
+                                    thumbnail_path = None
 
                     # Clickable thumbnail that adds to selection
                     if st.button("📌", key=f"select_insight_{index}_{i}",
@@ -638,20 +671,105 @@ def render_insight_card(insight: dict, index: int, data: dict = None):
                             st.session_state['selected_models'].append(model['model_id'])
                             st.success(f"Added {model.get('name', 'Model')} to selection!")
 
-                    # Render thumbnail using Streamlit's native image component
+                    # Render ultra-high-quality thumbnail with proper aspect ratio
                     resolved_path = apollo_image_handler.get_image_path(thumbnail_path)
                     if resolved_path and os.path.exists(resolved_path):
-                        st.image(resolved_path, width=40)
+                        try:
+                            from PIL import Image, ImageOps
+                            # Load image with high-quality settings
+                            img = Image.open(resolved_path)
+
+                            # Enhance image quality with proper resampling
+                            # Convert to RGB if needed for better quality
+                            if img.mode != 'RGB':
+                                img = img.convert('RGB')
+
+                            # Resize with high-quality resampling for crisp display
+                            target_size = (180, 240)  # Increased from 120px to 180px for ultra-sharp display
+                            img = ImageOps.fit(img, target_size, Image.Resampling.LANCZOS)
+
+                            # Enhanced thumbnail display with CSS styling
+                            st.markdown("""
+                            <style>
+                            .insight-thumbnail img {
+                                border-radius: 8px !important;
+                                border: 1px solid rgba(46, 240, 255, 0.3) !important;
+                                box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+                                transition: transform 0.2s ease !important;
+                                object-fit: cover !important;
+                                image-rendering: -webkit-optimize-contrast !important;
+                                image-rendering: crisp-edges !important;
+                            }
+                            .insight-thumbnail img:hover {
+                                transform: scale(1.05) !important;
+                                border-color: #2EF0FF !important;
+                            }
+                            </style>
+                            <div class="insight-thumbnail">
+                            """, unsafe_allow_html=True)
+
+                            st.image(
+                                img,
+                                width=180,  # Increased from 120 to 180 for ultra-sharp display
+                                caption="",
+                                use_container_width=False
+                            )
+                            st.markdown("</div>", unsafe_allow_html=True)
+                        except Exception:
+                            st.markdown("""
+                            <div style="
+                                width: 120px;
+                                height: 150px;
+                                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                                border-radius: 8px;
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                color: white;
+                                font-size: 2rem;
+                                border: 1px solid rgba(46, 240, 255, 0.3);
+                            ">
+                                📷
+                            </div>
+                            """, unsafe_allow_html=True)
                     else:
-                        st.markdown("📷", help="Image not found")
-                    st.caption(model.get('name', 'Unknown')[:12])
+                        st.markdown("""
+                        <div style="
+                            width: 120px;
+                            height: 150px;
+                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                            border-radius: 8px;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            color: white;
+                            font-size: 2rem;
+                            border: 1px solid rgba(46, 240, 255, 0.3);
+                        ">
+                            👤
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                        st.caption(model.get('name', 'Unknown')[:15])  # Show more characters
+
+    except Exception as e:
+        # Silently handle thumbnail errors to prevent raw data display
+        pass
 
     # Add actual button functionality
-    if st.button(f"{cta_text}", key=f"insight_{index}"):
-        if insight['cta_type'] == 'promote':
-            navigate_to_athena()
-        else:
-            st.info("Artemis scouting feature coming soon!")
+    try:
+        cta_type = insight.get('cta_type', 'promote')
+        cta_text = "Promote (Athena)" if cta_type == 'promote' else "Scout (Artemis)"
+
+        if st.button(f"{cta_text}", key=f"insight_{index}"):
+            if cta_type == 'promote':
+                navigate_to_athena()
+            else:
+                st.info("Artemis scouting feature coming soon!")
+    except Exception:
+        # Fallback button
+        if st.button("View Details", key=f"insight_fallback_{index}"):
+            st.info("Feature coming soon!")
 
 def render_height_distribution(models_df: pd.DataFrame):
     """Render height distribution histogram."""
@@ -730,12 +848,92 @@ def render_height_distribution(models_df: pd.DataFrame):
                         st.session_state['modal_model_data'] = model.to_dict()
                         st.rerun()
 
-                    # Render thumbnail using Streamlit's native image component
+                    # Render ultra-high-quality thumbnail with proper aspect ratio
                     resolved_path = apollo_image_handler.get_image_path(thumbnail_path)
                     if resolved_path and os.path.exists(resolved_path):
-                        st.image(resolved_path, width=32)
+                        try:
+                            from PIL import Image, ImageOps, ImageEnhance
+                            # Load image with maximum quality settings
+                            img = Image.open(resolved_path)
+
+                            # Enhance image quality for height distribution display
+                            if img.mode != 'RGB':
+                                img = img.convert('RGB')
+
+                            # Apply sharpness enhancement for crisp small display
+                            enhancer = ImageEnhance.Sharpness(img)
+                            img = enhancer.enhance(1.25)  # Strong sharpness boost for small thumbnails
+
+                            # Resize with high-quality resampling for ultra-sharp display
+                            target_size = (90, 120)  # Increased from 64px to 90px for better clarity
+                            img = ImageOps.fit(img, target_size, Image.Resampling.LANCZOS)
+
+                            # Enhanced height bucket thumbnail display with CSS styling
+                            st.markdown("""
+                            <style>
+                            .height-bucket-thumbnail img {
+                                border-radius: 6px !important;
+                                border: 1px solid rgba(46, 240, 255, 0.4) !important;
+                                box-shadow: 0 2px 8px rgba(46, 240, 255, 0.2) !important;
+                                transition: all 0.2s ease !important;
+                                object-fit: cover !important;
+                                image-rendering: -webkit-optimize-contrast !important;
+                                image-rendering: crisp-edges !important;
+                            }
+                            .height-bucket-thumbnail img:hover {
+                                transform: scale(1.05) !important;
+                                border-color: #2EF0FF !important;
+                                box-shadow: 0 3px 12px rgba(46, 240, 255, 0.4) !important;
+                            }
+                            </style>
+                            <div class="height-bucket-thumbnail">
+                            """, unsafe_allow_html=True)
+
+                            st.image(
+                                img,
+                                width=90,  # Increased from 64 to 90 for ultra-sharp display
+                                caption="",
+                                use_container_width=False
+                            )
+                            st.markdown("</div>", unsafe_allow_html=True)
+                        except Exception:
+                            st.markdown("""
+                            <div style="
+                                width: 90px;
+                                height: 120px;
+                                background: linear-gradient(135deg, #2EF0FF 0%, #1A8FFF 100%);
+                                border-radius: 6px;
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                color: white;
+                                font-size: 1.5rem;
+                                border: 1px solid rgba(46, 240, 255, 0.4);
+                                box-shadow: 0 2px 8px rgba(46, 240, 255, 0.2);
+                                margin: 0 auto;
+                            ">
+                                📷
+                            </div>
+                            """, unsafe_allow_html=True)
                     else:
-                        st.markdown("📷", help="Image not found")
+                        st.markdown("""
+                        <div style="
+                            width: 90px;
+                            height: 120px;
+                            background: linear-gradient(135deg, #2EF0FF 0%, #1A8FFF 100%);
+                            border-radius: 6px;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            color: white;
+                            font-size: 1.5rem;
+                            border: 1px solid rgba(46, 240, 255, 0.4);
+                            box-shadow: 0 2px 8px rgba(46, 240, 255, 0.2);
+                            margin: 0 auto;
+                        ">
+                            👤
+                        </div>
+                        """, unsafe_allow_html=True)
                     st.caption(model['name'][:10])
             else:
                 st.markdown(f"**{bucket_name}**")
@@ -822,14 +1020,105 @@ def render_model_quick_view_modal(model_data: dict, bookings_data: pd.DataFrame,
         col1, col2 = st.columns([1, 2])
 
         with col1:
-            # Model image
-            thumbnail_path = model_data.get('primary_thumbnail',
-                                          apollo_image_handler.get_primary_thumbnail(model_data))
+            # High-quality model image with proper aspect ratio
+            thumbnail_path = model_data.get('primary_thumbnail')
+            if not thumbnail_path:
+                thumbnail_path = apollo_image_handler.get_primary_thumbnail(model_data)
 
-            try:
-                st.image(thumbnail_path, width=200, caption="")
-            except:
-                st.image("https://via.placeholder.com/200x250/cccccc/666666?text=No+Image", width=200)
+            # Display model image with ultra-high quality and proper aspect ratio
+            if thumbnail_path and os.path.exists(thumbnail_path):
+                try:
+                    from PIL import Image, ImageOps, ImageEnhance
+                    # Load image with maximum quality settings
+                    img = Image.open(thumbnail_path)
+
+                    # Enhance image quality for modal display
+                    if img.mode != 'RGB':
+                        img = img.convert('RGB')
+
+                    # Enhance sharpness and contrast for crisp modal display
+                    enhancer = ImageEnhance.Sharpness(img)
+                    img = enhancer.enhance(1.2)  # Slight sharpness boost
+
+                    # Resize to optimal modal size with high-quality resampling
+                    # Use larger size for modal display (up to 400px width)
+                    max_width, max_height = 400, 500
+                    img.thumbnail((max_width, max_height), Image.Resampling.LANCZOS)
+
+                    # Use container with CSS for better image handling
+                    st.markdown("""
+                    <style>
+                    .modal-image-container {
+                        width: 100%;
+                        max-width: 400px;
+                        margin: 0 auto;
+                    }
+                    .modal-image-container img {
+                        width: 100%;
+                        height: auto;
+                        max-height: 500px;
+                        object-fit: contain;
+                        border-radius: 12px;
+                        border: 2px solid rgba(46, 240, 255, 0.3);
+                        box-shadow: 0 8px 25px rgba(46, 240, 255, 0.2);
+                        image-rendering: -webkit-optimize-contrast;
+                        image-rendering: crisp-edges;
+                    }
+                    </style>
+                    <div class="modal-image-container">
+                    """, unsafe_allow_html=True)
+
+                    st.image(img, caption="", use_container_width=True)
+                    st.markdown("</div>", unsafe_allow_html=True)
+
+                except Exception as e:
+                    st.markdown(
+                        f"""
+                        <div style="
+                            width: 100%;
+                            max-width: 350px;
+                            height: 450px;
+                            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+                            border: 2px solid #4a5568;
+                            border-radius: 12px;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            color: #a0aec0;
+                            font-size: 2rem;
+                            font-weight: bold;
+                            margin: 0 auto;
+                            box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+                        ">
+                            📷<br><small style="font-size: 0.8rem;">Image Error</small>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+            else:
+                st.markdown(
+                    """
+                    <div style="
+                        width: 100%;
+                        max-width: 350px;
+                        height: 450px;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        border: 2px solid rgba(46, 240, 255, 0.3);
+                        border-radius: 12px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        color: white;
+                        font-size: 3rem;
+                        font-weight: bold;
+                        margin: 0 auto;
+                        box-shadow: 0 8px 25px rgba(46, 240, 255, 0.2);
+                    ">
+                        👤<br><small style="font-size: 0.6rem;">No Image Available</small>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
 
         with col2:
             # Model details
@@ -945,10 +1234,167 @@ def show_model_quick_view_modal():
             st.error(f"Error loading modal data: {e}")
             st.session_state['show_model_modal'] = False
 
+def render_interactive_model_thumbnail(model_data: dict):
+    """Render interactive model thumbnail with high-quality images and proper aspect ratios."""
+    # Get the best available image path
+    thumbnail_path = model_data.get('primary_thumbnail')
+    if not thumbnail_path:
+        thumbnail_path = apollo_image_handler.get_primary_thumbnail(model_data)
+
+    # Container with proper aspect ratio
+    st.markdown(f"""
+    <div style="
+        border: 1px solid #333;
+        border-radius: 12px;
+        padding: 1rem;
+        background: linear-gradient(135deg, #1A1A1F 0%, #2A2A35 100%);
+        text-align: center;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        max-width: 280px;
+        margin: 0 auto;
+    " onmouseover="this.style.transform='scale(1.02)'; this.style.borderColor='#667eea';"
+       onmouseout="this.style.transform='scale(1)'; this.style.borderColor='#333';">
+    """, unsafe_allow_html=True)
+
+    # Ultra-high-quality image with proper aspect ratio and sharpness
+    if thumbnail_path and os.path.exists(thumbnail_path):
+        try:
+            from PIL import Image, ImageOps, ImageEnhance
+            # Load image with maximum quality settings
+            img = Image.open(thumbnail_path)
+
+            # Enhance image quality for interactive display
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+
+            # Apply sharpness enhancement for crisp display
+            enhancer = ImageEnhance.Sharpness(img)
+            img = enhancer.enhance(1.1)  # Subtle sharpness boost
+
+            # Resize with high-quality resampling for ultra-sharp display
+            target_size = (250, 320)  # Increased from 200px to 250px for maximum clarity
+            img = ImageOps.fit(img, target_size, Image.Resampling.LANCZOS)
+
+            # Display with proper aspect ratio and quality
+            st.image(
+                img,
+                width=250,  # Increased from 200 to 250 for ultra-sharp display
+                caption="",
+                use_container_width=False
+            )
+        except Exception:
+            # Fallback with proper dimensions
+            st.markdown(f"""
+            <div style="
+                width: 200px;
+                height: 250px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                border-radius: 8px;
+                margin: 0 auto 1rem;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 3rem;
+                color: white;
+            ">
+                👤
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        # Fallback placeholder with proper dimensions
+        st.markdown(f"""
+        <div style="
+            width: 200px;
+            height: 250px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 8px;
+            margin: 0 auto 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 3rem;
+            color: white;
+        ">
+            👤
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Model info
+    st.markdown(f"""
+    <div style="color: white; padding: 0.5rem;">
+        <h4 style="margin: 0.5rem 0; color: white;">{model_data['name']}</h4>
+        <p style="color: #ccc; font-size: 0.9rem; margin: 0.25rem 0;">{model_data['division'].upper()}</p>
+        <div style="display: flex; justify-content: space-around; margin-top: 1rem; font-size: 0.8rem;">
+            <span style="color: #00FF88;">📊 {model_data.get('bookings', 'N/A')}</span>
+            <span style="color: #2EF0FF;">💰 {model_data.get('revenue', 'N/A')}</span>
+            <span style="color: #FFD700;">⭐ {model_data.get('rating', 'N/A')}</span>
+        </div>
+    </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Action buttons
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("👁️ Quick View", key=f"apollo_quick_{model_data['model_id']}", type="secondary", use_container_width=True):
+            st.session_state.show_model_modal = True
+            st.session_state.modal_model_data = model_data
+            st.rerun()
+
+    with col2:
+        if st.button("🎯 Promote", key=f"apollo_promote_{model_data['model_id']}", type="primary", use_container_width=True):
+            # Transfer to Athena
+            from session_manager import SessionManager
+            SessionManager.transfer_model_to_athena(model_data, "Apollo")
+            st.rerun()
+
+def render_simple_insight_card(title: str, content: str, description: str, card_type: str = "info"):
+    """Render simple predictive insight card (alternative function)."""
+    colors = {
+        "positive": {"bg": "#1B4332", "border": "#00FF88", "icon": "📈"},
+        "info": {"bg": "#1A1A2E", "border": "#2EF0FF", "icon": "💡"},
+        "warning": {"bg": "#3D2914", "border": "#FFD700", "icon": "⚠️"}
+    }
+
+    color_scheme = colors.get(card_type, colors["info"])
+
+    st.markdown(f"""
+    <div style="
+        background: {color_scheme['bg']};
+        border: 2px solid {color_scheme['border']};
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+        color: white;
+    ">
+        <div style="display: flex; align-items: center; margin-bottom: 1rem;">
+            <span style="font-size: 1.5rem; margin-right: 0.5rem;">{color_scheme['icon']}</span>
+            <h3 style="margin: 0; color: white;">{title}</h3>
+        </div>
+        <p style="font-size: 1.1rem; margin: 0.5rem 0; color: white;">{content}</p>
+        <p style="font-size: 0.9rem; opacity: 0.8; margin: 0; color: #ccc;">{description}</p>
+    </div>
+    """, unsafe_allow_html=True)
+
 def main():
-    """Main Apollo dashboard rendering function."""
+    """Enhanced Apollo dashboard with interactive features and cross-assistant integration."""
     # Apply styling first - this will override main app styling
     apply_apollo_styling()
+
+    # Show integration messages
+    try:
+        from session_manager import SessionManager
+        from ui_components import NotificationComponents
+        NotificationComponents.show_integration_messages()
+    except ImportError:
+        pass
+
+    # Check for shared model context
+    shared_context = st.session_state.get('shared_model_context')
+    if shared_context and shared_context.get('active'):
+        model_data = shared_context['model_data']
+        st.info(f"🔍 Viewing analytics for: **{model_data['name']}** from {model_data['division'].upper()}")
 
     # Wrap everything in Apollo-themed container
     st.markdown('<div class="apollo-dashboard">', unsafe_allow_html=True)
@@ -998,12 +1444,90 @@ def main():
                     row_col1, row_col2 = st.columns([0.15, 0.85])
 
                     with row_col1:
-                        # Render thumbnail using Streamlit's native image component
+                        # Render ultra-high-quality thumbnail with proper aspect ratio
                         resolved_path = apollo_image_handler.get_image_path(thumbnail_path)
                         if resolved_path and os.path.exists(resolved_path):
-                            st.image(resolved_path, width=40)
+                            try:
+                                from PIL import Image, ImageOps, ImageEnhance
+                                # Load image with maximum quality settings
+                                img = Image.open(resolved_path)
+
+                                # Enhance image quality for leaderboard display
+                                if img.mode != 'RGB':
+                                    img = img.convert('RGB')
+
+                                # Apply subtle sharpness enhancement
+                                enhancer = ImageEnhance.Sharpness(img)
+                                img = enhancer.enhance(1.15)  # Slight sharpness boost for clarity
+
+                                # Resize with high-quality resampling for crisp display
+                                target_size = (160, 200)  # Increased from 120px to 160px for ultra-sharp display
+                                img = ImageOps.fit(img, target_size, Image.Resampling.LANCZOS)
+
+                                # Enhanced thumbnail display with CSS styling
+                                st.markdown("""
+                                <style>
+                                .leaderboard-thumbnail img {
+                                    border-radius: 8px !important;
+                                    border: 2px solid rgba(46, 240, 255, 0.4) !important;
+                                    box-shadow: 0 4px 15px rgba(46, 240, 255, 0.2) !important;
+                                    transition: all 0.3s ease !important;
+                                    object-fit: cover !important;
+                                    image-rendering: -webkit-optimize-contrast !important;
+                                    image-rendering: crisp-edges !important;
+                                }
+                                .leaderboard-thumbnail img:hover {
+                                    transform: scale(1.05) !important;
+                                    border-color: #2EF0FF !important;
+                                    box-shadow: 0 6px 20px rgba(46, 240, 255, 0.4) !important;
+                                }
+                                </style>
+                                <div class="leaderboard-thumbnail">
+                                """, unsafe_allow_html=True)
+
+                                st.image(
+                                    img,
+                                    width=160,  # Increased from 120 to 160 for ultra-sharp display
+                                    caption="",
+                                    use_container_width=False
+                                )
+                                st.markdown("</div>", unsafe_allow_html=True)
+                            except Exception:
+                                st.markdown("""
+                                <div style="
+                                    width: 120px;
+                                    height: 150px;
+                                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                                    border-radius: 8px;
+                                    display: flex;
+                                    align-items: center;
+                                    justify-content: center;
+                                    color: white;
+                                    font-size: 2rem;
+                                    border: 2px solid rgba(46, 240, 255, 0.4);
+                                    box-shadow: 0 4px 15px rgba(46, 240, 255, 0.2);
+                                ">
+                                    📷
+                                </div>
+                                """, unsafe_allow_html=True)
                         else:
-                            st.markdown("📷", help="Image not found")
+                            st.markdown("""
+                            <div style="
+                                width: 120px;
+                                height: 150px;
+                                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                                border-radius: 8px;
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                color: white;
+                                font-size: 2rem;
+                                border: 2px solid rgba(46, 240, 255, 0.4);
+                                box-shadow: 0 4px 15px rgba(46, 240, 255, 0.2);
+                            ">
+                                👤
+                            </div>
+                            """, unsafe_allow_html=True)
 
                         # Make thumbnail clickable for modal
                         if st.button("👁️", key=f"thumb_top_{performer['model_id']}",
@@ -1047,15 +1571,99 @@ def main():
                     thumbnail_path = model.get('primary_thumbnail',
                                              apollo_image_handler.get_primary_thumbnail(model.to_dict()))
 
-                    chip_col1, chip_col2 = st.columns([0.1, 0.9])
+                    chip_col1, chip_col2 = st.columns([0.2, 0.8])  # Increased from [0.1, 0.9] to provide more space
 
                     with chip_col1:
-                        # Render thumbnail using Streamlit's native image component
+                        # Render ultra-high-quality thumbnail with proper aspect ratio and no squeezing
                         resolved_path = apollo_image_handler.get_image_path(thumbnail_path)
                         if resolved_path and os.path.exists(resolved_path):
-                            st.image(resolved_path, width=24)
+                            try:
+                                from PIL import Image, ImageOps, ImageEnhance
+                                # Load image with maximum quality settings
+                                img = Image.open(resolved_path)
+
+                                # Enhance image quality for inactive models display
+                                if img.mode != 'RGB':
+                                    img = img.convert('RGB')
+
+                                # Apply sharpness enhancement for crisp display
+                                enhancer = ImageEnhance.Sharpness(img)
+                                img = enhancer.enhance(1.2)  # Stronger sharpness boost for small display
+
+                                # Resize with high-quality resampling for ultra-sharp display
+                                target_size = (120, 160)  # Increased from 100px to 120px for maximum clarity
+                                img = ImageOps.fit(img, target_size, Image.Resampling.LANCZOS)
+
+                                # Enhanced chip thumbnail display with CSS styling and proper dimensions
+                                st.markdown("""
+                                <style>
+                                .inactive-chip-thumbnail img {
+                                    border-radius: 8px !important;
+                                    border: 2px solid rgba(255, 68, 68, 0.4) !important;
+                                    box-shadow: 0 3px 10px rgba(255, 68, 68, 0.2) !important;
+                                    transition: all 0.2s ease !important;
+                                    object-fit: cover !important;
+                                    width: 100% !important;
+                                    height: auto !important;
+                                    max-width: 120px !important;
+                                    max-height: 160px !important;
+                                    image-rendering: -webkit-optimize-contrast !important;
+                                    image-rendering: crisp-edges !important;
+                                }
+                                .inactive-chip-thumbnail img:hover {
+                                    transform: scale(1.05) !important;
+                                    border-color: #FF4444 !important;
+                                    box-shadow: 0 4px 15px rgba(255, 68, 68, 0.4) !important;
+                                }
+                                </style>
+                                <div class="inactive-chip-thumbnail">
+                                """, unsafe_allow_html=True)
+
+                                st.image(
+                                    img,
+                                    width=120,  # Increased from 100 to 120 for ultra-sharp display
+                                    caption="",
+                                    use_container_width=False  # Fixed deprecated parameter
+                                )
+                                st.markdown("</div>", unsafe_allow_html=True)
+                            except Exception:
+                                st.markdown("""
+                                <div style="
+                                    width: 120px;
+                                    height: 160px;
+                                    background: linear-gradient(135deg, #FF4444 0%, #CC3333 100%);
+                                    border-radius: 8px;
+                                    display: flex;
+                                    align-items: center;
+                                    justify-content: center;
+                                    color: white;
+                                    font-size: 2rem;
+                                    border: 2px solid rgba(255, 68, 68, 0.4);
+                                    box-shadow: 0 3px 10px rgba(255, 68, 68, 0.2);
+                                    margin: 0 auto;
+                                ">
+                                    📷
+                                </div>
+                                """, unsafe_allow_html=True)
                         else:
-                            st.markdown("📷", help="Image not found")
+                            st.markdown("""
+                            <div style="
+                                width: 120px;
+                                height: 160px;
+                                background: linear-gradient(135deg, #FF4444 0%, #CC3333 100%);
+                                border-radius: 8px;
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                color: white;
+                                font-size: 2rem;
+                                border: 2px solid rgba(255, 68, 68, 0.4);
+                                box-shadow: 0 3px 10px rgba(255, 68, 68, 0.2);
+                                margin: 0 auto;
+                            ">
+                                👤
+                            </div>
+                            """, unsafe_allow_html=True)
 
                         # Make thumbnail clickable for modal
                         if st.button("👁️", key=f"thumb_inactive_{model['model_id']}",
@@ -1110,7 +1718,7 @@ def main():
                     </div>
                     """, unsafe_allow_html=True)
 
-                    # Show thumbnails in a simple row if available
+                    # Show high-quality thumbnails in a simple row if available
                     if client_thumbnails:
                         st.markdown("**Top Models:**")
                         thumb_cols = st.columns(min(len(client_thumbnails), 3))
@@ -1118,9 +1726,90 @@ def main():
                             with thumb_cols[i]:
                                 resolved_path = apollo_image_handler.get_image_path(thumb_path)
                                 if resolved_path and os.path.exists(resolved_path):
-                                    st.image(resolved_path, width=32)
+                                    try:
+                                        from PIL import Image, ImageOps, ImageEnhance
+                                        # Load image with maximum quality settings
+                                        img = Image.open(resolved_path)
+
+                                        # Enhance image quality for VIP client display
+                                        if img.mode != 'RGB':
+                                            img = img.convert('RGB')
+
+                                        # Apply sharpness and contrast enhancement for luxury display
+                                        sharpness_enhancer = ImageEnhance.Sharpness(img)
+                                        img = sharpness_enhancer.enhance(1.1)  # Subtle sharpness boost
+
+                                        contrast_enhancer = ImageEnhance.Contrast(img)
+                                        img = contrast_enhancer.enhance(1.05)  # Slight contrast boost
+
+                                        # Resize with high-quality resampling for ultra-sharp display
+                                        target_size = (140, 175)  # Increased from 100px to 140px for luxury display
+                                        img = ImageOps.fit(img, target_size, Image.Resampling.LANCZOS)
+
+                                        # Enhanced VIP client thumbnail display with CSS styling
+                                        st.markdown("""
+                                        <style>
+                                        .vip-client-thumbnail img {
+                                            border-radius: 8px !important;
+                                            border: 2px solid rgba(255, 215, 0, 0.5) !important;
+                                            box-shadow: 0 4px 15px rgba(255, 215, 0, 0.3) !important;
+                                            transition: all 0.3s ease !important;
+                                            object-fit: cover !important;
+                                            image-rendering: -webkit-optimize-contrast !important;
+                                            image-rendering: crisp-edges !important;
+                                        }
+                                        .vip-client-thumbnail img:hover {
+                                            transform: scale(1.05) !important;
+                                            border-color: #FFD700 !important;
+                                            box-shadow: 0 6px 20px rgba(255, 215, 0, 0.5) !important;
+                                        }
+                                        </style>
+                                        <div class="vip-client-thumbnail">
+                                        """, unsafe_allow_html=True)
+
+                                        st.image(
+                                            img,
+                                            width=140,  # Increased from 100 to 140 for luxury display
+                                            caption="",
+                                            use_container_width=False
+                                        )
+                                        st.markdown("</div>", unsafe_allow_html=True)
+                                    except Exception:
+                                        st.markdown("""
+                                        <div style="
+                                            width: 140px;
+                                            height: 175px;
+                                            background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+                                            border-radius: 8px;
+                                            display: flex;
+                                            align-items: center;
+                                            justify-content: center;
+                                            color: white;
+                                            font-size: 1.8rem;
+                                            border: 2px solid rgba(255, 215, 0, 0.5);
+                                            box-shadow: 0 4px 15px rgba(255, 215, 0, 0.3);
+                                        ">
+                                            📷
+                                        </div>
+                                        """, unsafe_allow_html=True)
                                 else:
-                                    st.markdown("📷")
+                                    st.markdown("""
+                                    <div style="
+                                        width: 140px;
+                                        height: 175px;
+                                        background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+                                        border-radius: 8px;
+                                        display: flex;
+                                        align-items: center;
+                                        justify-content: center;
+                                        color: white;
+                                        font-size: 1.8rem;
+                                        border: 2px solid rgba(255, 215, 0, 0.5);
+                                        box-shadow: 0 4px 15px rgba(255, 215, 0, 0.3);
+                                    ">
+                                        �
+                                    </div>
+                                    """, unsafe_allow_html=True)
 
                 if st.button("💎 VIP Update via Athena", key="vip_update"):
                     navigate_to_athena(
@@ -1213,12 +1902,48 @@ def main():
         st.markdown('<h3 class="section-header">🔮 Predictive Insights</h3>', unsafe_allow_html=True)
         st.markdown("**Strategy Suggestions**")
 
-        insights = generate_predictive_insights(data)
-        insight_cols = st.columns(2)
+        try:
+            insights = generate_predictive_insights(data)
 
-        for i, insight in enumerate(insights):
-            with insight_cols[i % 2]:
-                render_insight_card(insight, i, data)
+            # Validate insights data structure
+            if not insights or not isinstance(insights, list):
+                insights = [
+                    {
+                        'icon': '📊',
+                        'title': 'Market Analysis',
+                        'description': 'Seasonal trends indicate increased demand for diverse casting.',
+                        'action': 'Expand portfolio diversity',
+                        'cta_type': 'scout'
+                    },
+                    {
+                        'icon': '🎯',
+                        'title': 'Optimization Opportunity',
+                        'description': 'Automation can reduce booking time by 40-60%.',
+                        'action': 'Increase Athena usage',
+                        'cta_type': 'promote'
+                    }
+                ]
+
+            insight_cols = st.columns(2)
+
+            for i, insight in enumerate(insights):
+                # Validate insight structure
+                if isinstance(insight, dict) and all(key in insight for key in ['icon', 'title', 'description', 'action', 'cta_type']):
+                    with insight_cols[i % 2]:
+                        render_insight_card(insight, i, data)
+                else:
+                    # Skip malformed insights
+                    continue
+
+        except Exception as e:
+            st.error(f"Error loading predictive insights: {e}")
+            # Show fallback insights
+            st.markdown("""
+            <div class="premium-card">
+                <h4 style="color: #2EF0FF;">📊 Market Analysis</h4>
+                <p style="color: #E0E0E0;">Seasonal trends indicate increased demand for diverse casting.</p>
+            </div>
+            """, unsafe_allow_html=True)
 
         # Height Distribution Chart (if space allows)
         if not data['models'].empty:

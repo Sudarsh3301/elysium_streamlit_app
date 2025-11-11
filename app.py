@@ -1,7 +1,7 @@
 """
-Elysium Model Catalogue - Streamlit App with AI-powered Query Parsing
-A bare-bones Streamlit web app that demonstrates interactive model catalogue 
-with AI-powered query parsing using Ollama for offline inference.
+Elysium Model Catalogue - Enhanced Streamlit App
+A polished Streamlit web app with unified navigation, loading experience,
+error handling, and session continuity across all tabs.
 """
 
 import streamlit as st
@@ -14,6 +14,14 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 import logging
 import base64
+
+# Import enhanced components
+from session_manager import SessionManager
+from ui_components import (
+    LoadingComponents, NotificationComponents, ErrorComponents,
+    HeaderComponents, FooterComponents, NavigationComponents
+)
+from theme_manager import ThemeManager
 from athena_ui import AthenaUI
 
 # Configure logging
@@ -22,14 +30,25 @@ logger = logging.getLogger(__name__)
 
 # Page configuration
 st.set_page_config(
-    page_title="Elysium Model Catalogue",
-    page_icon="👥",
+    page_title="Elysium Model Catalogue v0.4",
+    page_icon="🎭",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
+# Import path configuration
+from path_config import paths, get_data_file, get_image_path
+
+# Validate data files on startup
+data_status = paths.validate_data_files()
+missing_files = [f for f, status in data_status.items() if not status['exists']]
+if missing_files:
+    st.error(f"Missing data files: {', '.join(missing_files)}")
+    st.info("Please ensure all CSV files are present in the 'out/' directory.")
+    st.stop()
+
 # Constants
-MODELS_FILE = "out/models_normalized.csv"
+MODELS_FILE = str(get_data_file("models_normalized.csv"))
 OLLAMA_URL = "http://localhost:11434/api/generate"
 OLLAMA_MODEL = "gemma3:4b"  # Using available model
 
@@ -473,17 +492,43 @@ class ImageHandler:
     @staticmethod
     def get_local_image_path(image_path: str) -> str:
         """Convert relative image path to absolute local path."""
-        # Remove leading slash if present and ensure forward slashes
-        clean_path = image_path.lstrip('/').replace('\\', '/')
-        # Build absolute path from the elysium_kb directory
-        local_path = os.path.join("..", "elysium_kb", clean_path)
-        return local_path
+        resolved_path = get_image_path(image_path)
+        if resolved_path and resolved_path.exists():
+            return str(resolved_path)
+
+        # Return original path if not found locally
+        return image_path
+
+    @staticmethod
+    def parse_images_list(images_str) -> List[str]:
+        """Parse the images column from CSV (string representation of list)."""
+        if not images_str or pd.isna(images_str):
+            return []
+
+        try:
+            # Handle string representation of list
+            if isinstance(images_str, str):
+                if images_str.startswith('[') and images_str.endswith(']'):
+                    import ast
+                    return ast.literal_eval(images_str)
+                else:
+                    # Single image path
+                    return [images_str]
+            elif isinstance(images_str, list):
+                return images_str
+            else:
+                return []
+        except (ValueError, SyntaxError) as e:
+            logger.warning(f"Could not parse images column: {images_str}, error: {e}")
+            return []
 
     @staticmethod
     def get_thumbnail_path(model_data: Dict[str, Any]) -> str:
         """Get the best available thumbnail path for a model."""
-        # First try to use local thumbnail from images array
-        images = model_data.get('images', [])
+        # Parse the images column properly
+        images_raw = model_data.get('images', [])
+        images = ImageHandler.parse_images_list(images_raw)
+
         if images:
             # Look for thumbnail.jpg first
             for img in images:
@@ -498,18 +543,16 @@ class ImageHandler:
             if os.path.exists(local_path):
                 return local_path
 
-        # Fallback to remote thumbnail if available
-        if model_data.get('thumbnail'):
-            return model_data['thumbnail']
-
-        # Final fallback to placeholder
-        return "https://via.placeholder.com/300x400/cccccc/666666?text=No+Image"
+        # Final fallback to a simple text placeholder
+        return None  # Return None to indicate no image found
 
     @staticmethod
     def get_valid_images(model_data: Dict[str, Any]) -> List[str]:
         """Get list of valid local image paths for a model."""
         valid_images = []
-        images = model_data.get('images', [])
+        # Parse the images column properly
+        images_raw = model_data.get('images', [])
+        images = ImageHandler.parse_images_list(images_raw)
 
         for img_path in images:
             local_path = ImageHandler.get_local_image_path(img_path)
@@ -518,50 +561,329 @@ class ImageHandler:
 
         return valid_images
 
-def display_model_card(model_data: Dict[str, Any], col):
-    """Display a single model card in the given column."""
+def display_enhanced_model_card(model_data: Dict[str, Any], col):
+    """Display an enhanced model card with hover interactions and quick actions."""
     with col:
-        # Create card container with styling
-        with st.container():
-            # Model image using local path with controlled sizing
-            thumbnail_path = ImageHandler.get_thumbnail_path(model_data)
+        # Create card container with hover styling
+        card_id = f"card_{model_data['model_id']}"
 
+        # Enhanced card with hover effects
+        st.markdown(f"""
+        <div id="{card_id}" style="
+            border: 1px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            background: white;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        " onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 8px 25px rgba(0,0,0,0.15)'; this.style.borderColor='#667eea';"
+           onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none'; this.style.borderColor='#e0e0e0';">
+        """, unsafe_allow_html=True)
+
+        # Model image using local path with controlled sizing
+        thumbnail_path = ImageHandler.get_thumbnail_path(model_data)
+
+        # Display image or placeholder
+        if thumbnail_path and os.path.exists(thumbnail_path):
             try:
-                # Use a specific height parameter to force consistent sizing
-                st.image(
-                    thumbnail_path,
-                    width=300,  # Fixed width for consistency
-                    caption=""
+                # Use PIL to load and display the image
+                from PIL import Image
+                img = Image.open(thumbnail_path)
+                st.image(img, width=280, caption="")
+            except Exception as e:
+                # If PIL fails, show a styled placeholder
+                st.markdown(
+                    f"""
+                    <div style="
+                        width: 280px;
+                        height: 220px;
+                        background: linear-gradient(135deg, #f0f0f0 0%, #e0e0e0 100%);
+                        border: 2px solid #ddd;
+                        border-radius: 8px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        color: #666;
+                        font-size: 16px;
+                        font-weight: bold;
+                        margin-bottom: 10px;
+                    ">
+                        📷 {model_data['name'][:15]}
+                    </div>
+                    """,
+                    unsafe_allow_html=True
                 )
-            except Exception:
-                # Fallback to placeholder if image fails to load
-                st.image(
-                    "https://via.placeholder.com/300x250/cccccc/666666?text=No+Image",
-                    width=300
-                )
+        else:
+            # Show a styled placeholder when no image is found
+            st.markdown(
+                f"""
+                <div style="
+                    width: 280px;
+                    height: 220px;
+                    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+                    border: 2px solid #dee2e6;
+                    border-radius: 8px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: #6c757d;
+                    font-size: 16px;
+                    font-weight: bold;
+                    margin-bottom: 10px;
+                ">
+                    📷 {model_data['name'][:15]}
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
 
-            # Model details
-            st.markdown(f"**{model_data['name']}**")
-            st.markdown(f"*Division: {model_data['division'].upper()}*")
+        # Model details
+        st.markdown(f"**{model_data['name']}**")
+        st.markdown(f"*Division: {model_data['division'].upper()}*")
 
-            # Attributes in a compact format
-            attr_col1, attr_col2 = st.columns(2)
-            with attr_col1:
-                st.markdown(f"👁️ {model_data['eye_color'].title()}")
-                st.markdown(f"📏 {model_data['height_cm']} cm")
-            with attr_col2:
-                st.markdown(f"💇 {model_data['hair_color'].title()}")
+        # Hover overlay with key attributes
+        st.markdown(f"""
+        <div style="
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.3rem;
+            margin: 0.5rem 0;
+        ">
+            <span style="background: #e3f2fd; padding: 0.2rem 0.5rem; border-radius: 12px; font-size: 0.75rem;">
+                📏 {model_data['height_cm']}cm
+            </span>
+            <span style="background: #f3e5f5; padding: 0.2rem 0.5rem; border-radius: 12px; font-size: 0.75rem;">
+                � {model_data['hair_color'].title()}
+            </span>
+            <span style="background: #e8f5e8; padding: 0.2rem 0.5rem; border-radius: 12px; font-size: 0.75rem;">
+                �️ {model_data['eye_color'].title()}
+            </span>
+        </div>
+        """, unsafe_allow_html=True)
 
-            # View Portfolio button
+        # Action buttons
+        col1, col2 = st.columns(2)
+        with col1:
             if st.button(
-                "👁️ View Portfolio",
-                key=f"view_{model_data['model_id']}",
-                type="secondary"
+                "�️ Quick View",
+                key=f"quick_{model_data['model_id']}",
+                type="secondary",
+                use_container_width=True
             ):
-                st.session_state.selected_model = model_data['model_id']
+                st.session_state.quick_view_model = model_data['model_id']
                 st.rerun()
 
-            st.markdown("---")
+        with col2:
+            if st.button(
+                "� Analytics",
+                key=f"analytics_{model_data['model_id']}",
+                type="secondary",
+                use_container_width=True
+            ):
+                # Set shared model context for Apollo
+                SessionManager.set_shared_model_context(model_data)
+                SessionManager.add_integration_message(
+                    f"Viewing analytics for {model_data['name']}",
+                    "success"
+                )
+                st.rerun()
+
+        # Close card div
+        st.markdown("</div>", unsafe_allow_html=True)
+
+def render_quick_view_modal(df: pd.DataFrame):
+    """Render quick view modal for model details."""
+    model_id = st.session_state.get('quick_view_model')
+    if not model_id:
+        return
+
+    # Find model data
+    model_data = df[df['model_id'] == model_id]
+    if model_data.empty:
+        st.error("Model not found")
+        st.session_state.quick_view_model = None
+        return
+
+    model_info = model_data.iloc[0].to_dict()
+
+    # Modal overlay
+    st.markdown("""
+    <div style="
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.5);
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    ">
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Modal content
+    with st.container():
+        st.markdown("### 👁️ Quick View")
+
+        col1, col2, col3 = st.columns([1, 2, 1])
+
+        with col2:
+            # Model image
+            thumbnail_path = ImageHandler.get_thumbnail_path(model_info)
+            if thumbnail_path and os.path.exists(thumbnail_path):
+                st.image(thumbnail_path, width=300)
+            else:
+                st.markdown(f"""
+                <div style="
+                    width: 300px;
+                    height: 400px;
+                    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+                    border: 2px solid #dee2e6;
+                    border-radius: 8px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: #6c757d;
+                    font-size: 18px;
+                    font-weight: bold;
+                    margin: 0 auto;
+                ">
+                    📷 {model_info['name']}
+                </div>
+                """, unsafe_allow_html=True)
+
+            # Model details
+            st.markdown(f"## {model_info['name']}")
+            st.markdown(f"**Division:** {model_info['division'].upper()}")
+
+            # Attributes grid
+            attr_col1, attr_col2 = st.columns(2)
+            with attr_col1:
+                st.markdown(f"**Height:** {model_info['height_cm']} cm")
+                st.markdown(f"**Hair:** {model_info['hair_color'].title()}")
+            with attr_col2:
+                st.markdown(f"**Eyes:** {model_info['eye_color'].title()}")
+
+            # Action buttons
+            button_col1, button_col2, button_col3 = st.columns(3)
+
+            with button_col1:
+                if st.button("📊 View Analytics", key="modal_analytics", use_container_width=True):
+                    SessionManager.set_shared_model_context(model_info)
+                    SessionManager.add_integration_message(
+                        f"Viewing analytics for {model_info['name']}",
+                        "success"
+                    )
+                    st.session_state.quick_view_model = None
+                    st.rerun()
+
+            with button_col2:
+                if st.button("🎯 Send to Athena", key="modal_athena", use_container_width=True):
+                    SessionManager.transfer_model_to_athena(model_info, "Catalogue")
+                    st.session_state.quick_view_model = None
+                    st.rerun()
+
+            with button_col3:
+                if st.button("❌ Close", key="modal_close", use_container_width=True):
+                    st.session_state.quick_view_model = None
+                    st.rerun()
+
+def render_ai_search_summary(ai_filters: dict, result_count: int):
+    """Render AI search summary with parsed filters."""
+    st.markdown("#### 🤖 AI Search Summary")
+
+    summary_parts = []
+    if ai_filters.get('hair_color'):
+        summary_parts.append(f"**Hair:** {ai_filters['hair_color']}")
+    if ai_filters.get('eye_color'):
+        summary_parts.append(f"**Eyes:** {ai_filters['eye_color']}")
+    if ai_filters.get('height_range'):
+        height_range = ai_filters['height_range']
+        summary_parts.append(f"**Height:** {height_range[0]}-{height_range[1]}cm")
+    if ai_filters.get('division'):
+        summary_parts.append(f"**Division:** {ai_filters['division'].upper()}")
+
+    if summary_parts:
+        summary_text = " • ".join(summary_parts)
+        st.markdown(f"""
+        <div style="
+            background: rgba(102, 126, 234, 0.1);
+            border-left: 4px solid #667eea;
+            padding: 1rem;
+            border-radius: 6px;
+            margin: 1rem 0;
+        ">
+            <strong>🎯 Parsed from your search:</strong> {summary_text}
+            <br><small>Found {result_count} models matching these criteria</small>
+        </div>
+        """, unsafe_allow_html=True)
+
+def render_enhanced_empty_state(ai_filters: dict, full_df):
+    """Render enhanced empty state with helpful suggestions."""
+    st.markdown("""
+    <div style="
+        text-align: center;
+        padding: 3rem 2rem;
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border-radius: 12px;
+        margin: 2rem 0;
+    ">
+        <div style="font-size: 4rem; margin-bottom: 1rem;">🔍</div>
+        <h3 style="color: #495057; margin-bottom: 1rem;">No Models Found</h3>
+        <p style="color: #6c757d; margin-bottom: 2rem;">
+            Don't worry! Let's help you find the perfect models for your campaign.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Helpful suggestions
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.markdown("#### 💡 Try This")
+        st.markdown("""
+        - Broaden your height range
+        - Try different hair/eye colors
+        - Use more general terms
+        - Check all divisions
+        """)
+
+    with col2:
+        st.markdown("#### 🎯 Quick Filters")
+        # Show popular combinations
+        popular_combos = [
+            {"hair": "blonde", "eyes": "blue", "count": len(full_df[(full_df['hair_color'].str.contains('blonde', case=False, na=False)) & (full_df['eye_color'].str.contains('blue', case=False, na=False))])},
+            {"hair": "brown", "eyes": "brown", "count": len(full_df[(full_df['hair_color'].str.contains('brown', case=False, na=False)) & (full_df['eye_color'].str.contains('brown', case=False, na=False))])},
+            {"hair": "black", "eyes": "brown", "count": len(full_df[(full_df['hair_color'].str.contains('black', case=False, na=False)) & (full_df['eye_color'].str.contains('brown', case=False, na=False))])}
+        ]
+
+        for combo in popular_combos:
+            if combo['count'] > 0:
+                if st.button(f"{combo['hair'].title()} hair, {combo['eyes']} eyes ({combo['count']} models)", key=f"combo_{combo['hair']}_{combo['eyes']}"):
+                    st.session_state.ai_filters = {
+                        'hair_color': combo['hair'],
+                        'eye_color': combo['eyes']
+                    }
+                    st.rerun()
+
+    with col3:
+        st.markdown("#### 🚀 Next Steps")
+        st.markdown("""
+        - **Reset filters** to see all models
+        - **Try natural language** search
+        - **Browse by division** (IMA/DEV)
+        - **Contact us** for custom searches
+        """)
+
+        if st.button("🔄 Reset All Filters", type="primary", use_container_width=True):
+            st.session_state.ai_filters = {}
+            if 'nl_search_query' in st.session_state:
+                st.session_state.nl_search_query = ""
+            SessionManager.add_notification("All filters cleared! Showing complete roster.", "success")
+            st.rerun()
 
 def show_expanded_model_view(model_data: Dict[str, Any], filtered_df: pd.DataFrame):
     """Display expanded model view with full details and image gallery."""
@@ -664,11 +986,56 @@ def show_expanded_model_view(model_data: Dict[str, Any], filtered_df: pd.DataFra
                 # Create a centered container for the main image
                 _, col2, _ = st.columns([1, 2, 1])
                 with col2:
-                    st.image(
-                        valid_images[current_carousel_index],
-                        width=400,  # Fixed width to prevent stretching
-                        caption=f"Portfolio Image {current_carousel_index + 1}"
-                    )
+                    current_image_path = valid_images[current_carousel_index]
+                    if os.path.exists(current_image_path):
+                        try:
+                            from PIL import Image
+                            img = Image.open(current_image_path)
+                            st.image(img, width=400, caption=f"Portfolio Image {current_carousel_index + 1}")
+                        except Exception:
+                            st.markdown(
+                                f"""
+                                <div style="
+                                    width: 400px;
+                                    height: 300px;
+                                    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+                                    border: 2px solid #dee2e6;
+                                    border-radius: 8px;
+                                    display: flex;
+                                    align-items: center;
+                                    justify-content: center;
+                                    color: #6c757d;
+                                    font-size: 18px;
+                                    font-weight: bold;
+                                    margin: 0 auto;
+                                ">
+                                    📷 Portfolio Image {current_carousel_index + 1}
+                                </div>
+                                """,
+                                unsafe_allow_html=True
+                            )
+                    else:
+                        st.markdown(
+                            f"""
+                            <div style="
+                                width: 400px;
+                                height: 300px;
+                                background: linear-gradient(135deg, #f0f0f0 0%, #e0e0e0 100%);
+                                border: 2px solid #ddd;
+                                border-radius: 8px;
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                color: #666;
+                                font-size: 18px;
+                                font-weight: bold;
+                                margin: 0 auto;
+                            ">
+                                📷 Image Not Found
+                            </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
             except Exception as e:
                 st.error(f"Could not load image: {e}")
 
@@ -693,17 +1060,56 @@ def show_expanded_model_view(model_data: Dict[str, Any], filtered_df: pd.DataFra
                                 st.rerun()
 
                             # Show thumbnail with border if it's the current image
-                            border_style = "border: 3px solid #667eea;" if img_idx == current_carousel_index else "border: 1px solid #ddd;"
-                            st.markdown(
-                                f"""
-                                <div style="{border_style} border-radius: 8px; padding: 2px;">
-                                    <img src="data:image/jpeg;base64,{get_image_base64(valid_images[img_idx])}"
-                                         style="width: 100%; height: 80px; object-fit: cover; border-radius: 6px;"
-                                         alt="Thumbnail {img_idx + 1}"/>
-                                </div>
-                                """,
-                                unsafe_allow_html=True
-                            )
+                            thumb_path = valid_images[img_idx]
+                            if os.path.exists(thumb_path):
+                                try:
+                                    from PIL import Image
+                                    img = Image.open(thumb_path)
+                                    # Resize for thumbnail display
+                                    img.thumbnail((100, 80))
+                                    st.image(img, caption=f"Thumbnail {img_idx + 1}")
+                                except Exception:
+                                    st.markdown(
+                                        f"""
+                                        <div style="
+                                            width: 100px;
+                                            height: 80px;
+                                            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+                                            border: 1px solid #dee2e6;
+                                            border-radius: 6px;
+                                            display: flex;
+                                            align-items: center;
+                                            justify-content: center;
+                                            color: #6c757d;
+                                            font-size: 12px;
+                                            font-weight: bold;
+                                        ">
+                                            📷 {img_idx + 1}
+                                        </div>
+                                        """,
+                                        unsafe_allow_html=True
+                                    )
+                            else:
+                                st.markdown(
+                                    f"""
+                                    <div style="
+                                        width: 100px;
+                                        height: 80px;
+                                        background: linear-gradient(135deg, #f0f0f0 0%, #e0e0e0 100%);
+                                        border: 1px solid #ddd;
+                                        border-radius: 6px;
+                                        display: flex;
+                                        align-items: center;
+                                        justify-content: center;
+                                        color: #666;
+                                        font-size: 12px;
+                                        font-weight: bold;
+                                    ">
+                                        📷 {img_idx + 1}
+                                    </div>
+                                    """,
+                                    unsafe_allow_html=True
+                                )
                         except Exception as e:
                             st.error(f"Could not load thumbnail: {e}")
     else:
@@ -745,274 +1151,193 @@ def display_model_grid(filtered_df: pd.DataFrame, max_results: int = 20):
             model_idx = row * cols_per_row + col_idx
             if model_idx < len(display_df):
                 model_data = display_df.iloc[model_idx].to_dict()
-                display_model_card(model_data, cols[col_idx])
+                display_enhanced_model_card(model_data, cols[col_idx])
 
 def main():
-    """Main Streamlit application."""
+    """Enhanced main Streamlit application with unified navigation and theming."""
 
-    # Apply main app styling - will be overridden by Apollo if needed
-    st.markdown("""
-    <style>
-    /* Main app styling - light theme (default) */
-    .stApp {
-        background-color: #f8f9fa;
-    }
+    try:
+        # Initialize session state first
+        SessionManager.initialize_session()
 
-    /* Ensure text is visible with dark text (default) */
-    .stApp .stMarkdown,
-    .stApp .stText,
-    .stApp .stCaption,
-    .stApp p,
-    .stApp div,
-    .stApp span,
-    .stApp h1,
-    .stApp h2,
-    .stApp h3,
-    .stApp h4,
-    .stApp h5,
-    .stApp h6 {
-        color: #262730;
-    }
+        # Apply global theme
+        ThemeManager.apply_global_theme()
 
-    /* Force dark text for markdown content */
-    .stApp .stMarkdown p,
-    .stApp .stMarkdown div,
-    .stApp .stMarkdown span {
-        color: #262730;
-    }
+        # Show global header - TESTING SIMPLE VERSION
+        HeaderComponents.show_global_header()
 
-    /* Sidebar styling */
-    .stSidebar {
-        background-color: #ffffff;
-    }
+        # Show notifications
+        NotificationComponents.show_notifications()
 
-    .stSidebar .stMarkdown,
-    .stSidebar p,
-    .stSidebar div,
-    .stSidebar span {
-        color: #262730;
-    }
+        # Show sidebar navigation
+        NavigationComponents.show_sidebar_navigation()
 
-    .main-header {
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-        padding: 2rem;
-        border-radius: 10px;
-        color: white;
-        margin-bottom: 2rem;
-    }
+        # Show breadcrumbs
+        NavigationComponents.show_breadcrumbs()
 
-    .model-card {
-        background: white;
-        padding: 1rem;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        margin-bottom: 1rem;
-        transition: all 0.3s ease;
-        cursor: pointer;
-        position: relative;
-        overflow: hidden;
-    }
+        # Get current page from session
+        current_page = SessionManager.get_page()
 
-    .model-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
-        background: #f8f9fa;
-    }
+        # Load data with loading indicator
+        SessionManager.set_loading(True, "Loading model data...")
 
-    /* Thumbnail image sizing - force consistent dimensions */
-    .stImage > img,
-    .stImage img,
-    img[data-testid="stImage"],
-    [data-testid="stImage"] img,
-    .stApp img {
-        border-radius: 8px !important;
-        object-fit: cover !important;
-        aspect-ratio: 3/4 !important;
-        height: 250px !important;
-        width: auto !important;
-        max-width: 100% !important;
-    }
+        @st.cache_data
+        def load_data():
+            return DataLoader.load_and_normalize_models(MODELS_FILE)
 
-    /* Container for images to ensure proper sizing */
-    .stImage,
-    [data-testid="stImage"] {
-        height: 250px !important;
-        overflow: hidden !important;
-        border-radius: 8px !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-    }
+        try:
+            df = load_data()
+            if df.empty:
+                ErrorComponents.show_data_error()
+                return
 
-    /* Carousel main image styling */
-    .carousel-main-image {
-        max-width: 400px !important;
-        max-height: 500px !important;
-        object-fit: contain !important;
-        margin: 0 auto !important;
-        display: block !important;
-    }
+            # Cache dataframe in session
+            st.session_state.df_cache = df
+            st.session_state.data_loaded = True
+            from datetime import datetime
+            st.session_state.data_load_time = datetime.now()
 
-    .stButton > button {
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        border-radius: 5px;
-        width: 100%;
-    }
+        except Exception as e:
+            SessionManager.log_error(e, "Data loading")
+            ErrorComponents.show_data_error()
+            return
+        finally:
+            SessionManager.set_loading(False)
 
-    /* Container styling for model cards - only for main app */
-    .stApp:not([data-theme="apollo"]) .stContainer > div {
-        background-color: #ffffff;
-        border-radius: 10px;
-        padding: 15px;
-        margin: 10px 0;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    </style>
+        # Route to appropriate page based on navigation
+        if current_page == "Catalogue":
+            render_catalogue_page(df)
+        elif current_page == "Athena":
+            render_athena_page(df)
+        elif current_page == "Apollo":
+            render_apollo_page()
+        else:
+            # Default to catalogue
+            SessionManager.set_page("Catalogue")
+            render_catalogue_page(df)
 
-    <script>
-    // Force image styling on load and resize
-    function applyImageStyling() {
-        const images = document.querySelectorAll('img');
-        images.forEach(img => {
-            if (img.src && !img.src.includes('placeholder')) {
-                img.style.height = '250px';
-                img.style.objectFit = 'cover';
-                img.style.borderRadius = '8px';
-                img.style.width = 'auto';
-                img.style.maxWidth = '100%';
-            }
-        });
-    }
+        # Show global footer and status bar
+        FooterComponents.show_global_footer()
+        FooterComponents.show_status_bar()
 
-    // Apply styling immediately and on DOM changes
-    document.addEventListener('DOMContentLoaded', applyImageStyling);
-    window.addEventListener('load', applyImageStyling);
+    except Exception as e:
+        SessionManager.log_error(e, "Main application")
+        ErrorComponents.show_error_card(
+            "Application Error",
+            f"An unexpected error occurred: {str(e)}",
+            [
+                "Try refreshing the page",
+                "Reset the session using the sidebar",
+                "Check the browser console for more details"
+            ]
+        )
 
-    // Use MutationObserver to catch dynamically added images
-    const observer = new MutationObserver(applyImageStyling);
-    observer.observe(document.body, { childList: true, subtree: true });
+def render_catalogue_page(df: pd.DataFrame):
+    """Render the enhanced Catalogue page with hybrid search and interactive features."""
+    try:
+        st.title("🎭 Elysium Model Catalogue")
+        st.markdown("*Discover and explore our diverse talent roster*")
 
-    // Apply styling every 100ms for the first 2 seconds to catch late-loading images
-    let attempts = 0;
-    const interval = setInterval(() => {
-        applyImageStyling();
-        attempts++;
-        if (attempts >= 20) clearInterval(interval);
-    }, 100);
-    </script>
-    """, unsafe_allow_html=True)
+        # Show integration messages
+        NotificationComponents.show_integration_messages()
 
-    # Header
-    st.markdown("""
-    <div class="main-header">
-        <h1>🎭 Elysium Model Catalogue</h1>
-        <p>Local AI Demo - Search and filter real model data using AI-assisted queries</p>
-    </div>
-    """, unsafe_allow_html=True)
+        # Handle quick view modal
+        if st.session_state.get('quick_view_model'):
+            render_quick_view_modal(df)
 
-    # Initialize session state first
-    if 'ai_filters' not in st.session_state:
-        st.session_state.ai_filters = {}
-    if 'selected_model' not in st.session_state:
-        st.session_state.selected_model = None
-    if 'current_model_index' not in st.session_state:
-        st.session_state.current_model_index = 0
-    if 'hover_model' not in st.session_state:
-        st.session_state.hover_model = None
-    if 'current_tab' not in st.session_state:
-        st.session_state.current_tab = 'Catalogue'
-
-    # Apollo-specific session state
-    if 'selected_models' not in st.session_state:
-        st.session_state.selected_models = []
-    if 'selected_clients' not in st.session_state:
-        st.session_state.selected_clients = []
-    if 'active_tab' not in st.session_state:
-        st.session_state.active_tab = "Catalogue"
-
-    # Create tabs
-    tab1, tab2, tab3 = st.tabs(["📚 Catalogue", "🏛️ Athena", "📊 Apollo"])
-
-    # Initialize Athena UI
-    athena_ui = AthenaUI()
-
-    # Load data
-    @st.cache_data
-    def load_data():
-        return DataLoader.load_and_normalize_models(MODELS_FILE)
-
-    df = load_data()
-
-    if df.empty:
-        st.error("No model data available. Please check the data file.")
-        return
-
-    # Cache dataframe for Athena
-    st.session_state.df_cache = df
-
-    # Catalogue Tab
-    with tab1:
-        st.session_state.current_tab = 'Catalogue'
         # Only show filters and search when not in expanded view
         if not st.session_state.selected_model:
-            # Sidebar filters
-            st.sidebar.header("🔍 Manual Filters")
+            # Enhanced search section
+            st.markdown("### 🔍 Hybrid Search & Discovery")
 
-            # Get unique values for filters
-            unique_hair_colors = sorted(df['hair_color'].dropna().unique())
-            unique_eye_colors = sorted(df['eye_color'].dropna().unique())
-            unique_divisions = sorted(df['division'].dropna().unique())
-            min_height, max_height = int(df['height_cm'].min()), int(df['height_cm'].max())
+            # Search mode tabs
+            search_tab1, search_tab2 = st.tabs(["🤖 Natural Language", "🔧 Structured Filters"])
 
-            # Manual filter controls
-            selected_hair = st.sidebar.multiselect("Hair Color", unique_hair_colors)
-            selected_eyes = st.sidebar.multiselect("Eye Color", unique_eye_colors)
-            selected_divisions = st.sidebar.multiselect("Division", unique_divisions)
-            height_range = st.sidebar.slider(
-                "Height Range (cm)",
-                min_height, max_height,
-                (min_height, max_height)
-            )
+            with search_tab1:
+                # Natural language search
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    user_query = st.text_area(
+                        "Describe what you're looking for:",
+                        placeholder="e.g., 'tall blonde models for fashion shoot' or 'brunette with green eyes for commercial'",
+                        height=80,
+                        key="nl_search_query"
+                    )
 
-            if st.sidebar.button("🔄 Reset Filters"):
-                st.session_state.ai_filters = {}
-                # Clear manual filters by rerunning with empty session state
-                for key in list(st.session_state.keys()):
-                    if key.startswith('multiselect') or key.startswith('slider'):
-                        del st.session_state[key]
-                st.rerun()
+                with col2:
+                    st.markdown("#### 💡 Search Tips")
+                    st.markdown("""
+                    - Use natural language
+                    - Mention height, hair, eyes
+                    - Specify campaign type
+                    - Include style preferences
+                    """)
 
-            # Main area - AI Query
-            st.header("🤖 AI-Powered Search")
-
-            user_query = st.text_area(
-                "Enter client brief:",
-                placeholder="e.g., 'Looking for blonde models with blue eyes around 175 cm'",
-                height=100
-            )
-
-            search_col = st.columns([1])[0]
-
-            with search_col:
-                if st.button("🔍 Search with AI (Ollama)", type="primary"):
+                if st.button("🔍 Search with AI (Ollama)", type="primary", use_container_width=True):
                     if user_query.strip():
-                        with st.spinner("🧠 Processing with AI..."):
+                        SessionManager.set_loading(True, "Processing AI query...")
+                        try:
                             prompt = OllamaClient.create_prompt(user_query)
                             ai_result = OllamaClient.query_ollama(prompt)
 
                             if ai_result is not None:
                                 st.session_state.ai_filters = ai_result
-                                st.success("✅ AI query processed successfully!")
+                                SessionManager.add_notification("AI query processed successfully!", "success")
                             else:
-                                st.error("❌ Failed to process AI query")
+                                SessionManager.add_notification("Failed to process AI query", "error")
+                        except Exception as e:
+                            SessionManager.log_error(e, "AI query processing")
+                            ErrorComponents.show_ai_error()
+                        finally:
+                            SessionManager.set_loading(False)
                     else:
-                        st.warning("⚠️ Please enter a query first")
+                        SessionManager.add_notification("Please enter a query first", "warning")
+
+            with search_tab2:
+                # Sidebar filters section
+                with st.sidebar:
+                    st.markdown("### 🔍 Manual Filters")
+
+                    # Get unique values for filters
+                    unique_hair_colors = sorted(df['hair_color'].dropna().unique())
+                    unique_eye_colors = sorted(df['eye_color'].dropna().unique())
+                    unique_divisions = sorted(df['division'].dropna().unique())
+                    min_height, max_height = int(df['height_cm'].min()), int(df['height_cm'].max())
+
+                    # Manual filter controls
+                    selected_hair = st.multiselect("Hair Color", unique_hair_colors)
+                    selected_eyes = st.multiselect("Eye Color", unique_eye_colors)
+                    selected_divisions = st.multiselect("Division", unique_divisions)
+                    height_range = st.slider(
+                        "Height Range (cm)",
+                        min_height, max_height,
+                        (min_height, max_height)
+                    )
+
+                    if st.button("🔄 Reset All Filters", use_container_width=True):
+                        st.session_state.ai_filters = {}
+                        # Clear natural language search
+                        if 'nl_search_query' in st.session_state:
+                            st.session_state.nl_search_query = ""
+                        SessionManager.add_notification("All filters reset successfully", "success")
+                        st.rerun()
+
+                # Structured filter display in main area
+                st.markdown("#### 🔧 Quick Filters")
+                filter_col1, filter_col2, filter_col3 = st.columns(3)
+
+                with filter_col1:
+                    quick_hair = st.selectbox("Hair Color", ["All"] + unique_hair_colors, key="quick_hair")
+
+                with filter_col2:
+                    quick_eyes = st.selectbox("Eye Color", ["All"] + unique_eye_colors, key="quick_eyes")
+
+                with filter_col3:
+                    quick_division = st.selectbox("Division", ["All"] + unique_divisions, key="quick_division")
 
             # Display AI filters
             if st.session_state.ai_filters:
-                st.subheader("🎯 AI-Parsed Filters")
+                st.markdown("### 🎯 AI-Parsed Filters")
                 st.json(st.session_state.ai_filters)
 
             # Apply filters and display results
@@ -1035,34 +1360,82 @@ def main():
             if not selected_model_data.empty:
                 show_expanded_model_view(selected_model_data.iloc[0].to_dict(), filtered_df)
             else:
-                st.error("Selected model not found.")
+                ErrorComponents.show_error_card("Model Not Found", "The selected model could not be found.")
                 st.session_state.selected_model = None
-                # Show grid if model not found
-                st.subheader(f"📊 Results: Displaying {min(len(filtered_df), 20)} of {len(df)} models")
-                display_model_grid(filtered_df)
+                st.rerun()
         else:
-            # Display results count and model grid only when not in expanded view
-            st.subheader(f"📊 Results: Displaying {min(len(filtered_df), 20)} of {len(df)} models")
-            display_model_grid(filtered_df)
+            # Enhanced results display with comprehensive feedback
+            if not filtered_df.empty:
+                # Success state with results
+                result_count = len(filtered_df)
+                total_count = len(df)
 
-    # Athena Tab
-    with tab2:
-        st.session_state.current_tab = 'Athena'
+                if result_count == total_count:
+                    st.markdown(f"### 🎭 All {total_count} Models")
+                    st.info("💡 Showing complete roster. Use filters above to narrow your search!")
+                else:
+                    st.markdown(f"### 🎯 Found {result_count} of {total_count} Models")
+
+                    # Show search effectiveness
+                    effectiveness = (result_count / total_count) * 100
+                    if effectiveness > 80:
+                        st.success(f"🎯 Great match! Found {effectiveness:.0f}% of our roster.")
+                    elif effectiveness > 50:
+                        st.info(f"📊 Good results! Found {effectiveness:.0f}% of our roster.")
+                    else:
+                        st.warning(f"🔍 Narrow search! Found {effectiveness:.0f}% of our roster. Consider broadening filters.")
+
+                # Show AI filter summary if used
+                if st.session_state.ai_filters:
+                    render_ai_search_summary(st.session_state.ai_filters, result_count)
+
+                display_model_grid(filtered_df)
+
+                # Pagination and next steps
+                if result_count > 12:
+                    st.info(f"📄 Showing all {result_count} results. Use quick actions on model cards for next steps!")
+
+            else:
+                # Enhanced empty state with helpful suggestions
+                render_enhanced_empty_state(st.session_state.ai_filters, df)
+
+    except Exception as e:
+        SessionManager.log_error(e, "Catalogue page rendering")
+        ErrorComponents.show_error_card("Page Error", f"Error rendering catalogue: {str(e)}")
+
+def render_athena_page(df: pd.DataFrame):
+    """Render the Athena page with enhanced UI."""
+    try:
+        # Initialize Athena UI
+        athena_ui = AthenaUI()
         athena_ui.render_athena_tab(df)
+    except Exception as e:
+        SessionManager.log_error(e, "Athena page rendering")
+        ErrorComponents.show_error_card("Athena Error", f"Error loading Athena: {str(e)}")
 
-    # Apollo Tab
-    with tab3:
-        st.session_state.current_tab = 'Apollo'
-        try:
-            # Import Apollo module
-            from pages.apollo import main as apollo_main
-            apollo_main()
-        except ImportError as e:
-            st.error(f"❌ Failed to load Apollo dashboard: {e}")
-            st.info("Please ensure apollo.py is in the pages/ directory.")
-        except Exception as e:
-            st.error(f"❌ Apollo dashboard error: {e}")
-            st.info("Please check that all required data files are available in the out/ directory.")
+def render_apollo_page():
+    """Render the Apollo page with enhanced UI."""
+    try:
+        # Apply Apollo-specific theme
+        ThemeManager.apply_apollo_theme()
+
+        # Import Apollo module
+        from apollo import main as apollo_main
+        apollo_main()
+    except ImportError as e:
+        SessionManager.log_error(e, "Apollo import")
+        ErrorComponents.show_error_card(
+            "Apollo Dashboard Unavailable",
+            "Failed to load Apollo dashboard module.",
+            ["Ensure apollo.py is in the pages/ directory", "Check file permissions"]
+        )
+    except Exception as e:
+        SessionManager.log_error(e, "Apollo page rendering")
+        ErrorComponents.show_error_card(
+            "Apollo Dashboard Error",
+            f"Error loading Apollo dashboard: {str(e)}",
+            ["Check that all required data files are available in the out/ directory"]
+        )
 
 if __name__ == "__main__":
     main()

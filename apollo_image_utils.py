@@ -13,6 +13,9 @@ import hashlib
 from pathlib import Path
 import logging
 
+# Import centralized path management
+from path_config import paths, get_image_path
+
 logger = logging.getLogger(__name__)
 
 class ApolloImageHandler:
@@ -85,23 +88,10 @@ class ApolloImageHandler:
         if os.path.isabs(image_path):
             return image_path
 
-        # Clean the image path
-        clean_path = image_path.lstrip('/')
-
-        # Try different base paths in order of preference
-        base_paths = [
-            "../elysium_kb",  # From streamlit app directory
-            "elysium_kb",     # From repo root
-            "../model-dataset",  # Alternative location
-            "model-dataset",     # Alternative from root
-            ".",              # Current directory
-            ".."              # Parent directory
-        ]
-
-        for base_path in base_paths:
-            full_path = os.path.join(base_path, clean_path)
-            if os.path.exists(full_path):
-                return full_path
+        # Use centralized path management
+        resolved_path = get_image_path(image_path)
+        if resolved_path and resolved_path.exists():
+            return str(resolved_path)
 
         # Return original path if not found locally
         return image_path

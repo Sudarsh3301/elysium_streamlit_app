@@ -17,6 +17,8 @@ from typing import Dict, List, Optional, Any
 
 # Import Apollo image utilities
 from apollo_image_utils import ApolloImageHandler, apollo_model_cache
+# Import centralized path management
+from path_config import paths
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -25,10 +27,10 @@ logger = logging.getLogger(__name__)
 class ApolloDataLoader:
     """Centralized data loader for Apollo Intelligence Dashboard."""
     
-    def __init__(self, data_dir: str = "out"):
+    def __init__(self, data_dir: str = None):
         """Initialize with data directory path."""
-        # Resolve the path relative to the current working directory
-        self.data_dir = Path(data_dir).resolve()
+        # Use centralized path management
+        self.data_dir = paths.data_dir if data_dir is None else Path(data_dir).resolve()
         self._cache = {}
         logger.info(f"Apollo data directory: {self.data_dir}")
         
