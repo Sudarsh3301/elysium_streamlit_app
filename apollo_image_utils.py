@@ -1,119 +1,72 @@
 """
 Apollo Image Utilities
-Handles thumbnail extraction, caching, and image processing for the Apollo dashboard.
+REFACTORED: Now uses HTTPS-only image handling for the Apollo dashboard.
 """
 
-import os
-import ast
 import streamlit as st
 import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple
-from functools import lru_cache
-import hashlib
-from pathlib import Path
 import logging
 
-# Import centralized path management
-from path_config import paths, get_image_path
+# Import HTTPS image utilities
+from https_image_utils import https_image_handler
 
 logger = logging.getLogger(__name__)
 
 class ApolloImageHandler:
-    """Handles image processing and caching for Apollo dashboard."""
-    
-    # Placeholder image as base64 (1x1 transparent pixel)
-    PLACEHOLDER_IMAGE = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
-    
+    """
+    REFACTORED: Now uses HTTPS-only image handling for Apollo dashboard.
+    Maintains compatibility with existing code.
+    """
+
     def __init__(self):
+        # Compatibility placeholder
         self.thumbnail_cache = {}
-        
+
     @staticmethod
     def parse_images_column(images_str: str) -> List[str]:
-        """Parse the images column from CSV (string representation of list)."""
+        """
+        REFACTORED: Parse images data - now expects HTTPS URLs.
+        Maintains compatibility with old CSV format.
+        """
         if not images_str or pd.isna(images_str):
             return []
-        
+
         try:
-            # Handle string representation of list
+            # Handle list directly (from models_final.jsonl)
+            if isinstance(images_str, list):
+                return [img for img in images_str if img and isinstance(img, str)]
+
+            # Handle string representation of list (legacy CSV format)
             if isinstance(images_str, str):
                 if images_str.startswith('[') and images_str.endswith(']'):
-                    return ast.literal_eval(images_str)
+                    import ast
+                    parsed = ast.literal_eval(images_str)
+                    return [img for img in parsed if img and isinstance(img, str)]
                 else:
                     # Single image path
-                    return [images_str]
-            elif isinstance(images_str, list):
-                return images_str
-            else:
-                return []
+                    return [images_str] if images_str else []
+
+            return []
         except (ValueError, SyntaxError) as e:
             logger.warning(f"Could not parse images column: {images_str}, error: {e}")
             return []
-    
+
     @staticmethod
     def get_primary_thumbnail(model_data: Dict[str, Any]) -> str:
         """
-        Extract primary thumbnail using the priority order:
-        1. images[0] if present and valid
-        2. thumbnail field if present
-        3. generic placeholder image
+        REFACTORED: Get primary thumbnail HTTPS URL.
         """
-        # Parse images column
-        images = ApolloImageHandler.parse_images_column(model_data.get('images', ''))
-        
-        # Priority 1: First image from images array
-        if images:
-            first_image = images[0]
-            local_path = ApolloImageHandler.get_local_image_path(first_image)
-            if os.path.exists(local_path):
-                return local_path
-            # If local doesn't exist, try the path as-is (might be remote URL)
-            return first_image
-        
-        # Priority 2: Thumbnail field
-        if model_data.get('thumbnail'):
-            thumbnail_url = model_data['thumbnail']
-            # Check if it's a local path that exists
-            if not thumbnail_url.startswith('http'):
-                local_path = ApolloImageHandler.get_local_image_path(thumbnail_url)
-                if os.path.exists(local_path):
-                    return local_path
-            return thumbnail_url
-        
-        # Priority 3: Placeholder
-        return "https://via.placeholder.com/150x200/cccccc/666666?text=No+Image"
-    
+        return https_image_handler.get_thumbnail_url(model_data)
+
     @staticmethod
     def get_local_image_path(image_path: str) -> str:
-        """Convert relative image path to absolute local path."""
-        if os.path.isabs(image_path):
-            return image_path
-
-        # Use centralized path management
-        resolved_path = get_image_path(image_path)
-        if resolved_path and resolved_path.exists():
-            return str(resolved_path)
-
-        # Return original path if not found locally
+        """
+        DEPRECATED: Returns the image path as-is for compatibility.
+        All paths should now be HTTPS URLs.
+        """
+        logger.warning("get_local_image_path is deprecated. Use HTTPS URLs directly.")
         return image_path
-    
-    def get_image_path(self, image_path: str) -> str:
-        """Get the resolved local image path or return a placeholder."""
-        if not image_path:
-            return None
-
-        # Handle remote URLs - return as-is
-        if image_path.startswith('http'):
-            return image_path
-
-        # Resolve local path
-        resolved_path = self.get_local_image_path(image_path)
-
-        # Check if file exists
-        if os.path.exists(resolved_path):
-            return resolved_path
-        else:
-            logger.warning(f"Image not found: {image_path} -> {resolved_path}")
-            return None
 
     
     def render_circular_thumbnail(self, image_path: str, size: int = 32,

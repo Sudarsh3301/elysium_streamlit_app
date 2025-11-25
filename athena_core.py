@@ -333,23 +333,23 @@ class PDFGenerator:
         )
         self.normal_style = self.styles['Normal']
     
-    def get_image_for_pdf(self, image_path: str, max_width: float = 180, max_height: float = 216):
-        """Get image object for PDF with proper sizing."""
+    def get_image_for_pdf(self, image_url: str, max_width: float = 180, max_height: float = 216):
+        """
+        REFACTORED: Get image object for PDF from HTTPS URL.
+        """
         try:
-            # Convert relative path to absolute
-            if not os.path.isabs(image_path):
-                image_path = os.path.join("..", "elysium_kb", image_path.lstrip('/'))
-
-            if not os.path.exists(image_path):
+            # Handle HTTPS URLs directly
+            if image_url.startswith('http'):
+                # Use ImageReader to load from URL
+                img = Image(ImageReader(image_url), width=max_width, height=max_height)
+                img.hAlign = 'CENTER'
+                return img
+            else:
+                logger.warning(f"Non-HTTPS image URL provided: {image_url}")
                 return None
 
-            # Create ReportLab Image object
-            img = Image(image_path, width=max_width, height=max_height)
-            img.hAlign = 'CENTER'
-            return img
-
         except Exception as e:
-            logger.warning(f"Could not load image {image_path}: {e}")
+            logger.warning(f"Could not load image from URL {image_url}: {e}")
             return None
     
     def generate_model_pdf(self, model: Dict[str, Any], output_dir: str = "pdfs") -> Optional[str]:
@@ -375,7 +375,7 @@ class PDFGenerator:
             # Measurements table
             measurements_data = [
                 ['Attribute', 'Value'],
-                ['Height', f"{model['height_cm']} cm"],
+                ['Height', f"{int(model['height_cm'])} cm"],
                 ['Hair', model['hair_color'].title()],
                 ['Eyes', model['eye_color'].title()],
             ]

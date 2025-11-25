@@ -10,8 +10,8 @@ import os
 import base64
 import logging
 
-# Import centralized path management
-from path_config import paths, get_image_path
+# Import HTTPS image handling
+from https_image_utils import https_image_handler
 
 # Import enhanced UI components
 from session_manager import SessionManager
@@ -431,7 +431,7 @@ class AthenaUI:
             attr_col1, attr_col2 = st.columns(2)
             with attr_col1:
                 st.markdown(f"👁️ {model['eye_color'].title()}")
-                st.markdown(f"📏 {model['height_cm']} cm")
+                st.markdown(f"📏 {int(model['height_cm'])} cm")
             with attr_col2:
                 st.markdown(f"💇 {model['hair_color'].title()}")
                 if model.get('waist'):
@@ -460,27 +460,10 @@ class AthenaUI:
             st.markdown("---")
     
     def _get_model_thumbnail(self, model: Dict[str, Any]) -> str:
-        """Get the best available thumbnail for a model."""
-        images = model.get('images', [])
-        if images:
-            # Look for thumbnail first
-            for img in images:
-                if 'thumbnail' in img.lower():
-                    resolved_path = get_image_path(img)
-                    if resolved_path and resolved_path.exists():
-                        return str(resolved_path)
-
-            # Use first image if no thumbnail
-            first_img = images[0]
-            resolved_path = get_image_path(first_img)
-            if resolved_path and resolved_path.exists():
-                return str(resolved_path)
-        
-        # Fallback to remote thumbnail
-        if model.get('thumbnail'):
-            return model['thumbnail']
-        
-        return "https://via.placeholder.com/250x300/cccccc/666666?text=No+Image"
+        """
+        REFACTORED: Get thumbnail HTTPS URL for a model.
+        """
+        return https_image_handler.get_thumbnail_url(model)
 
     def _generate_template_pdfs(self, models: List[Dict], template_name: str, client_brief: str) -> List[str]:
         """Generate PDFs using the selected template."""

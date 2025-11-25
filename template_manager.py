@@ -11,8 +11,9 @@ from datetime import datetime
 from pathlib import Path
 import logging
 
-# Import centralized path management
-from path_config import paths, get_image_path
+# Import path management and HTTPS image handling
+from path_config import paths
+from https_image_utils import https_image_handler
 
 # Optional imports for template rendering
 try:
@@ -170,15 +171,13 @@ class TemplateManager:
             processed_model.setdefault('eye_color', 'Unknown')
             processed_model.setdefault('images', [])
             
-            # Process images - ensure we have local paths
-            processed_images = []
-            for img_path in processed_model['images']:
-                resolved_path = get_image_path(img_path)
-                if resolved_path and resolved_path.exists():
-                    processed_images.append(str(resolved_path))
-            
+            # REFACTORED: Process images - use HTTPS URLs directly
+            processed_images = processed_model.get('images', [])
+            # Filter out any empty/invalid URLs
+            processed_images = [img for img in processed_images if img and isinstance(img, str)]
+
             processed_model['images'] = processed_images
-            processed_model['hero_image'] = processed_images[0] if processed_images else None
+            processed_model['hero_image'] = processed_images[0] if processed_images else https_image_handler.PLACEHOLDER_URL
             processed_model['thumbnail_images'] = processed_images[1:4] if len(processed_images) > 1 else []
             
             processed_models.append(processed_model)

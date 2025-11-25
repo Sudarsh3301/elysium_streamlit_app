@@ -15,9 +15,9 @@ from pathlib import Path
 import logging
 from typing import Dict, List, Optional, Any
 
-# Import Apollo image utilities
+# Import unified data loader and Apollo image utilities
+from unified_data_loader import unified_loader
 from apollo_image_utils import ApolloImageHandler, apollo_model_cache
-# Import centralized path management
 from path_config import paths
 
 # Configure logging
@@ -44,9 +44,9 @@ class ApolloDataLoader:
         """
         data = {}
         
-        # Define required files and their loading functions
+        # REFACTORED: Use unified loader for models, CSV for other data
         files_to_load = {
-            'models': ('models_normalized.csv', _self._load_models),
+            'models': (None, _self._load_models_unified),  # Use unified loader
             'bookings': ('bookings.csv', _self._load_bookings),
             'performance': ('model_performance.csv', _self._load_performance),
             'clients': ('clients.csv', _self._load_clients),
@@ -55,44 +55,57 @@ class ApolloDataLoader:
 
         for key, (filename, loader_func) in files_to_load.items():
             try:
-                file_path = _self.data_dir / filename
-                if file_path.exists():
-                    data[key] = loader_func(file_path)
+                if filename is None:  # Special case for unified loader
+                    data[key] = loader_func()
                     logger.info(f"✅ Loaded {key}: {len(data[key])} records")
                 else:
-                    logger.warning(f"⚠️ File not found: {filename}")
-                    data[key] = pd.DataFrame()  # Empty DataFrame as fallback
+                    file_path = _self.data_dir / filename
+                    if file_path.exists():
+                        data[key] = loader_func(file_path)
+                        logger.info(f"✅ Loaded {key}: {len(data[key])} records")
+                    else:
+                        logger.warning(f"⚠️ File not found: {filename}")
+                        data[key] = pd.DataFrame()  # Empty DataFrame as fallback
             except Exception as e:
-                logger.error(f"❌ Failed to load {filename}: {e}")
+                logger.error(f"❌ Failed to load {filename or key}: {e}")
                 data[key] = pd.DataFrame()  # Empty DataFrame as fallback
         
         return data
     
-    def _load_models(self, file_path: Path) -> pd.DataFrame:
-        """Load and process models data with thumbnail processing."""
-        df = pd.read_csv(file_path)
-
-        # Ensure required columns exist
-        required_cols = ['model_id', 'name', 'division', 'height_cm', 'hair_color', 'eye_color']
-        for col in required_cols:
-            if col not in df.columns:
-                df[col] = None
-
-        # Convert height to numeric
-        df['height_cm'] = pd.to_numeric(df['height_cm'], errors='coerce')
-
-        # Add primary thumbnail column using Apollo image utilities
+    def _load_models_unified(self) -> pd.DataFrame:
+        """
+        REFACTORED: Load models using unified data loader from models_final.jsonl.
+        """
         try:
-            df['primary_thumbnail'] = df.apply(
-                lambda row: ApolloImageHandler.get_primary_thumbnail(row.to_dict()),
-                axis=1
-            )
-            logger.info(f"✅ Added primary_thumbnail column to {len(df)} models")
-        except Exception as e:
-            logger.warning(f"⚠️ Could not add thumbnails to models: {e}")
-            df['primary_thumbnail'] = "https://via.placeholder.com/150x200/cccccc/666666?text=No+Image"
+            df = unified_loader.load_models()
 
-        return df
+            if df.empty:
+                logger.warning("No models loaded from unified loader")
+                return pd.DataFrame()
+
+            # Ensure all required columns exist for Apollo compatibility
+            required_cols = ['model_id', 'name', 'division', 'height_cm', 'hair_color', 'eye_color', 'primary_thumbnail']
+            for col in required_cols:
+                if col not in df.columns:
+                    if col == 'primary_thumbnail':
+                        df[col] = df.get('thumbnail', "https://via.placeholder.com/150x200/cccccc/666666?text=No+Image")
+                    else:
+                        df[col] = None
+
+            logger.info(f"✅ Loaded {len(df)} models from unified loader")
+            return df
+
+        except Exception as e:
+            logger.error(f"❌ Failed to load models from unified loader: {e}")
+            return pd.DataFrame()
+
+    def _load_models(self, file_path: Path) -> pd.DataFrame:
+        """
+        DEPRECATED: Legacy CSV loading method kept for compatibility.
+        Use _load_models_unified instead.
+        """
+        logger.warning("_load_models is deprecated. Using unified loader instead.")
+        return self._load_models_unified()
     
     def _load_bookings(self, file_path: Path) -> pd.DataFrame:
         """Load and process bookings data."""
@@ -271,11 +284,19 @@ class ApolloMetrics:
         """Get top performing models by revenue."""
         if self.data['performance'].empty or self.data['models'].empty:
             return pd.DataFrame()
-        
+
+        # Ensure model_id columns have consistent data types
+        performance_df = self.data['performance'].copy()
+        models_df = self.data['models'].copy()
+
+        # Convert model_id to string for consistent merging
+        performance_df['model_id'] = performance_df['model_id'].astype(str)
+        models_df['model_id'] = models_df['model_id'].astype(str)
+
         # Merge performance with model data
-        top_performers = self.data['performance'].merge(
-            self.data['models'][['model_id', 'name', 'division']], 
-            on='model_id', 
+        top_performers = performance_df.merge(
+            models_df[['model_id', 'name', 'division']],
+            on='model_id',
             how='left'
         ).sort_values('revenue_total_usd', ascending=False).head(limit)
         
@@ -317,7 +338,11 @@ class ApolloMetrics:
                 'revenue_usd': 'sum',
                 'booking_id': 'count'
             }).rename(columns={'booking_id': 'total_bookings'}).reset_index()
-            
+
+            # Ensure client_id columns have consistent data types
+            vip_clients['client_id'] = vip_clients['client_id'].astype(str)
+            client_stats['client_id'] = client_stats['client_id'].astype(str)
+
             vip_clients = vip_clients.merge(client_stats, on='client_id', how='left')
             vip_clients['revenue_usd'] = vip_clients['revenue_usd'].fillna(0)
             vip_clients['total_bookings'] = vip_clients['total_bookings'].fillna(0)

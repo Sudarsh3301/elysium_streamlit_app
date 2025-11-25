@@ -851,34 +851,85 @@ class NavigationComponents:
     """Navigation and breadcrumb components."""
     
     @staticmethod
+    def show_sidebar_toggle_button():
+        """Show sidebar toggle button in main area when sidebar is hidden."""
+        # Initialize sidebar state
+        if 'sidebar_open' not in st.session_state:
+            st.session_state.sidebar_open = True
+
+        # Show toggle button only when sidebar is closed
+        if not st.session_state.sidebar_open:
+            # Create a floating toggle button
+            st.markdown("""
+            <div style="
+                position: fixed;
+                top: 20px;
+                left: 20px;
+                z-index: 999;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                border-radius: 50%;
+                width: 50px;
+                height: 50px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                cursor: pointer;
+            ">
+                <span style="color: white; font-size: 20px;">☰</span>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Toggle button
+            if st.button("☰ Open Sidebar", key="open_sidebar_btn", help="Open navigation sidebar"):
+                st.session_state.sidebar_open = True
+                st.rerun()
+
+    @staticmethod
     def show_sidebar_navigation():
-        """Show persistent sidebar navigation."""
+        """Show persistent sidebar navigation with toggle functionality."""
+        # Initialize sidebar state
+        if 'sidebar_open' not in st.session_state:
+            st.session_state.sidebar_open = True
+
         current_page = SessionManager.get_page()
-        
-        st.sidebar.markdown("""
-        <div style="
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            padding: 1rem;
-            border-radius: 10px;
-            color: white;
-            margin-bottom: 1rem;
-            text-align: center;
-        ">
-            <h2 style="margin: 0; font-size: 1.2rem;">🎭 Navigation</h2>
-        </div>
-        """, unsafe_allow_html=True)
-        
+
+        # Only show sidebar content if it's open
+        if not st.session_state.sidebar_open:
+            return current_page
+
+        # Sidebar header with close button
+        header_col1, header_col2 = st.sidebar.columns([3, 1])
+        with header_col1:
+            st.sidebar.markdown("""
+            <div style="
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                padding: 1rem;
+                border-radius: 10px;
+                color: white;
+                margin-bottom: 1rem;
+                text-align: center;
+            ">
+                <h2 style="margin: 0; font-size: 1.2rem;">🎭 Navigation</h2>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with header_col2:
+            if st.sidebar.button("✖️", key="close_sidebar_btn", help="Close sidebar"):
+                st.session_state.sidebar_open = False
+                st.rerun()
+
         # Navigation buttons
         pages = [
             ("📚 Catalogue", "Catalogue", "Browse and search model catalogue"),
             ("🏛️ Athena", "Athena", "AI assistant for client briefs"),
             ("📊 Apollo", "Apollo", "Agency intelligence dashboard")
         ]
-        
+
         for icon_name, page_name, description in pages:
             is_current = current_page == page_name
             button_style = "primary" if is_current else "secondary"
-            
+
             if st.sidebar.button(
                 icon_name,
                 key=f"nav_{page_name}",
@@ -889,20 +940,11 @@ class NavigationComponents:
                 if page_name != current_page:
                     SessionManager.set_page(page_name)
                     st.rerun()
-        
-        # Session controls
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("**🔧 Session Controls**")
-        
-        col1, col2 = st.sidebar.columns(2)
-        with col1:
-            if st.button("🔄 Reset", help="Reset session state", use_container_width=True):
-                SessionManager.reset_session()
-                st.rerun()
-        
-        with col2:
-            if st.button("📊 Status", help="Show session status", use_container_width=True):
-                st.sidebar.json(SessionManager.get_session_info())
+
+
+
+        # Return current page
+        return current_page
     
     @staticmethod
     def show_breadcrumbs():
