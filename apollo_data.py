@@ -50,7 +50,8 @@ class ApolloDataLoader:
             'bookings': ('bookings.csv', _self._load_bookings),
             'performance': ('model_performance.csv', _self._load_performance),
             'clients': ('clients.csv', _self._load_clients),
-            'athena_events': ('athena_events.csv', _self._load_athena_events)
+            'athena_events': ('athena_events.csv', _self._load_athena_events),
+            'external_intel': ('external_intel_synth.csv', _self._load_external_intelligence)
         }
 
         for key, (filename, loader_func) in files_to_load.items():
@@ -69,7 +70,37 @@ class ApolloDataLoader:
             except Exception as e:
                 logger.error(f"❌ Failed to load {filename or key}: {e}")
                 data[key] = pd.DataFrame()  # Empty DataFrame as fallback
-        
+
+        # Perform LEFT JOIN merge as specified: models LEFT JOIN model_performance LEFT JOIN bookings LEFT JOIN external_intel_synth
+        if not data['models'].empty:
+            try:
+                merged_models = data['models'].copy()
+
+                # Ensure model_id is string for consistent merging
+                merged_models['model_id'] = merged_models['model_id'].astype(str)
+
+                # LEFT JOIN with model_performance
+                if not data['performance'].empty:
+                    perf_df = data['performance'].copy()
+                    perf_df['model_id'] = perf_df['model_id'].astype(str)
+                    merged_models = merged_models.merge(perf_df, on='model_id', how='left')
+                    logger.info(f"✅ Merged models with performance data")
+
+                # LEFT JOIN with external_intel
+                if not data['external_intel'].empty:
+                    intel_df = data['external_intel'].copy()
+                    intel_df['model_id'] = intel_df['model_id'].astype(str)
+                    merged_models = merged_models.merge(intel_df, on='model_id', how='left')
+                    logger.info(f"✅ Merged models with external intelligence data")
+
+                # Store the merged dataset
+                data['models_merged'] = merged_models
+                logger.info(f"✅ Created merged dataset with {len(merged_models)} models")
+
+            except Exception as e:
+                logger.error(f"❌ Failed to merge datasets: {e}")
+                data['models_merged'] = data['models'].copy()  # Fallback to original models
+
         return data
     
     def _load_models_unified(self) -> pd.DataFrame:
@@ -161,15 +192,40 @@ class ApolloDataLoader:
     def _load_athena_events(self, file_path: Path) -> pd.DataFrame:
         """Load and process Athena events data."""
         df = pd.read_csv(file_path)
-        
+
         # Convert timestamp
         if 'timestamp' in df.columns:
             df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
-        
+
         # Convert selected to boolean
         if 'selected' in df.columns:
             df['selected'] = df['selected'].astype(bool)
-        
+
+        return df
+
+    def _load_external_intelligence(self, file_path: Path) -> pd.DataFrame:
+        """Load and process external intelligence data."""
+        df = pd.read_csv(file_path)
+
+        # Convert timestamp
+        if 'timestamp' in df.columns:
+            df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+
+        # Convert numeric columns
+        numeric_cols = [
+            'followers_ig', 'followers_growth_7d', 'engagement_rate',
+            'brand_mentions_30d', 'sentiment_score', 'exposure_velocity',
+            'booking_probability'
+        ]
+
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        # Ensure model_id is string for consistent merging
+        if 'model_id' in df.columns:
+            df['model_id'] = df['model_id'].astype(str)
+
         return df
 
 class ApolloMetrics:
@@ -348,3 +404,45 @@ class ApolloMetrics:
             vip_clients['total_bookings'] = vip_clients['total_bookings'].fillna(0)
         
         return vip_clients.sort_values('revenue_usd', ascending=False) if 'revenue_usd' in vip_clients.columns else vip_clients
+
+
+def load_external_intelligence() -> pd.DataFrame:
+    """
+    Standalone function to load external intelligence data.
+
+    Returns:
+        DataFrame with external intelligence metrics for all models
+    """
+    try:
+        file_path = paths.data_dir / "external_intel_synth.csv"
+        if not file_path.exists():
+            logger.warning(f"External intelligence file not found: {file_path}")
+            return pd.DataFrame()
+
+        df = pd.read_csv(file_path)
+
+        # Convert timestamp
+        if 'timestamp' in df.columns:
+            df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+
+        # Convert numeric columns
+        numeric_cols = [
+            'followers_ig', 'followers_growth_7d', 'engagement_rate',
+            'brand_mentions_30d', 'sentiment_score', 'exposure_velocity',
+            'booking_probability'
+        ]
+
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        # Ensure model_id is string for consistent merging
+        if 'model_id' in df.columns:
+            df['model_id'] = df['model_id'].astype(str)
+
+        logger.info(f"✅ Loaded {len(df)} external intelligence records")
+        return df
+
+    except Exception as e:
+        logger.error(f"❌ Failed to load external intelligence data: {e}")
+        return pd.DataFrame()

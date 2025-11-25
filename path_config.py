@@ -71,7 +71,15 @@ class ElysiumPaths:
     @property
     def data_dir(self) -> Path:
         """Get the data directory (out/)."""
-        return self._project_root / "out"
+        # REFACTORED: Data files are now in elysium_streamlit_app/out/
+        # Check if we're running from within elysium_streamlit_app directory
+        current_dir = Path.cwd().resolve()
+        if current_dir.name == "elysium_streamlit_app":
+            # We're running from within the app directory
+            return current_dir / "out"
+        else:
+            # We're running from project root
+            return self.app_dir / "out"
     
     @property
     def images_dir(self) -> Path:

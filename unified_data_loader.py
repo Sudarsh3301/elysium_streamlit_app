@@ -24,7 +24,23 @@ class UnifiedModelLoader:
     def __init__(self, project_root: Optional[Path] = None):
         """Initialize the unified model loader."""
         self.project_root = project_root or self._find_project_root()
-        self.models_file = self.project_root / "elysium_kb" / "models_final.jsonl"
+        # REFACTORED: Look for models_final.jsonl in the new structure
+        possible_locations = [
+            self.project_root / "elysium_streamlit_app" / "models_final.jsonl",  # Primary location
+            Path(__file__).parent / "models_final.jsonl",  # Same directory as this file
+            self.project_root / "elysium_kb" / "models_final.jsonl",  # Legacy location
+        ]
+
+        self.models_file = None
+        for location in possible_locations:
+            if location.exists():
+                self.models_file = location
+                break
+
+        if self.models_file is None:
+            # Fallback to the expected location
+            self.models_file = self.project_root / "elysium_streamlit_app" / "models_final.jsonl"
+
         self._models_cache = None
         
     def _find_project_root(self) -> Path:
@@ -54,10 +70,10 @@ class UnifiedModelLoader:
             DataFrame with all model data including HTTPS image URLs
         """
         try:
-            if not _self.models_file.exists():
+            if _self.models_file is None or not _self.models_file.exists():
                 logger.error(f"Models file not found: {_self.models_file}")
                 return pd.DataFrame()
-            
+
             models = []
             with open(_self.models_file, 'r', encoding='utf-8') as f:
                 for line_num, line in enumerate(f, 1):
