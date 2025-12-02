@@ -21,7 +21,7 @@ from athena_ui import AthenaUI
 # Import modular catalogue components
 from catalogue import (
     FilterEngine, OllamaClient,
-    ModelCardRenderer, ModalRenderer, SearchRenderer, ExpandedModelRenderer
+    ModelCardRenderer, SearchRenderer, ExpandedModelRenderer, ModelProfilePage
 )
 
 # Import unified data loader
@@ -62,14 +62,28 @@ def get_model_index_in_filtered(model_id: str, filtered_df: pd.DataFrame) -> int
     except (ValueError, KeyError):
         return 0
 
+def generate_model_url_slug(name: str) -> str:
+    """Generate SEO-friendly URL slug from model name."""
+    import re
+    # Convert to lowercase and replace spaces with underscores
+    slug = name.lower().replace(' ', '_')
+    # Remove any non-alphanumeric characters except underscores
+    slug = re.sub(r'[^a-z0-9_]', '', slug)
+    return slug
+
+def find_model_by_url_slug(slug: str, df: pd.DataFrame) -> Optional[Dict[str, Any]]:
+    """Find model by URL slug."""
+    for _, model in df.iterrows():
+        if generate_model_url_slug(str(model['name'])) == slug:
+            return model.to_dict()
+    return None
+
 # Wrapper functions for backward compatibility
 def display_enhanced_model_card(model_data: Dict[str, Any], col):
     """Display an enhanced model card - delegated to ModelCardRenderer."""
     ModelCardRenderer.display_enhanced_model_card(model_data, col)
 
-def render_quick_view_modal(df: pd.DataFrame):
-    """Render quick view modal - delegated to ModalRenderer."""
-    ModalRenderer.render_quick_view_modal(df)
+
 
 def render_ai_search_summary(ai_filters: dict, result_count: int):
     """Render AI search summary - delegated to SearchRenderer."""
@@ -188,7 +202,10 @@ def main():
 
     # Navigation
     current_page = NavigationComponents.show_sidebar_navigation()
-    
+
+    # Show toggle button when sidebar is closed (allows reopening)
+    NavigationComponents.show_sidebar_toggle_button()
+
     # REFACTORED: Load data using unified loader
     with LoadingComponents.show_global_spinner("Loading model data..."):
         df = unified_loader.load_models()
@@ -217,11 +234,23 @@ def main():
 def render_catalogue_page(df: pd.DataFrame):
     """Render the enhanced Catalogue page with hybrid search and interactive features."""
     try:
+        # Check for URL parameters for model profile page
+        model_slug = st.query_params.get("model")
+        if model_slug:
+            # Find model by URL slug
+            model_data = find_model_by_url_slug(model_slug, df)
+            if model_data:
+                # Render dedicated model profile page
+                ModelProfilePage.render_model_profile_page(model_data, df)
+                return
+            else:
+                # Model not found, show error and clear URL params
+                st.error(f"Model '{model_slug}' not found.")
+                st.query_params.clear()
+                st.rerun()
+
         st.markdown("## 🎭 Model Catalogue")
-        
-        # Handle quick view modal
-        render_quick_view_modal(df)
-        
+
         # Handle expanded model view
         if st.session_state.get('selected_model'):
             model_data = df[df['model_id'] == st.session_state.selected_model]

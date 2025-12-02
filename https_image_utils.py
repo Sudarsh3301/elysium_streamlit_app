@@ -205,7 +205,7 @@ class HTTPSImageHandler:
                 if img_idx < len(display_urls):
                     with cols[col_idx]:
                         try:
-                            st.image(display_urls[img_idx], use_column_width=True)
+                            st.image(display_urls[img_idx], use_container_width=True)
                         except Exception as e:
                             logger.warning(f"Failed to display portfolio image {img_idx}: {e}")
                             st.markdown("📷 *Image unavailable*")

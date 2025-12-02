@@ -849,84 +849,164 @@ class FooterComponents:
 
 class NavigationComponents:
     """Navigation and breadcrumb components."""
-    
+
+    # Navigation items - defined once globally
+    NAV_ITEMS = [
+        ("📚 Catalogue", "Catalogue", "Browse and search model catalogue"),
+        ("🏛️ Athena", "Athena", "AI assistant for client briefs"),
+        ("📊 Apollo", "Apollo", "Agency intelligence dashboard")
+    ]
+
     @staticmethod
-    def show_sidebar_toggle_button():
-        """Show sidebar toggle button in main area when sidebar is hidden."""
-        # Initialize sidebar state
+    def _ensure_sidebar_visible():
+        """
+        Ensure sidebar is always visible on app load/page change.
+        This prevents the sidebar from being permanently hidden.
+        """
+        # Always reset sidebar_open to True on initialization
+        # This ensures the navbar is NEVER permanently hidden
         if 'sidebar_open' not in st.session_state:
             st.session_state.sidebar_open = True
 
-        # Show toggle button only when sidebar is closed
-        if not st.session_state.sidebar_open:
-            # Create a floating toggle button
+        # IMPORTANT: Reset sidebar visibility on page navigation
+        # This ensures closing sidebar is only temporary for current view
+        if 'last_nav_page' not in st.session_state:
+            st.session_state.last_nav_page = None
+
+        current_page = SessionManager.get_page()
+        if st.session_state.last_nav_page != current_page:
+            # Page changed - reset sidebar to visible
+            st.session_state.sidebar_open = True
+            st.session_state.last_nav_page = current_page
+
+    @staticmethod
+    def show_sidebar_toggle_button():
+        """Show sidebar toggle button in main area when sidebar is hidden."""
+        # Ensure sidebar visibility is properly managed
+        NavigationComponents._ensure_sidebar_visible()
+
+        # Show toggle button only when sidebar is temporarily closed
+        if not st.session_state.get('sidebar_open', True):
+            # Create a floating toggle button that won't be hidden by Apollo CSS
+            # We use a specific key that Apollo CSS will target to keep visible
             st.markdown("""
-            <div style="
-                position: fixed;
-                top: 20px;
-                left: 20px;
-                z-index: 999;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                border-radius: 50%;
-                width: 50px;
-                height: 50px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-                cursor: pointer;
-            ">
-                <span style="color: white; font-size: 20px;">☰</span>
-            </div>
+            <style>
+            /* Ensure the sidebar toggle button is ALWAYS visible, even on Apollo page */
+            /* Target by the Streamlit key class */
+            .st-key-open_sidebar_btn,
+            .st-key-open_sidebar_btn .stButton,
+            .st-key-open_sidebar_btn .stButton button {
+                display: inline-flex !important;
+                visibility: visible !important;
+                opacity: 1 !important;
+                height: auto !important;
+                width: auto !important;
+                min-width: 120px !important;
+                min-height: 40px !important;
+                position: fixed !important;
+                top: 70px !important;
+                left: 10px !important;
+                z-index: 100000 !important;
+                pointer-events: auto !important;
+                cursor: pointer !important;
+            }
+            .st-key-open_sidebar_btn .stButton button {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+                color: white !important;
+                border: none !important;
+                border-radius: 8px !important;
+                padding: 8px 16px !important;
+                font-weight: 600 !important;
+                box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4) !important;
+                pointer-events: auto !important;
+                cursor: pointer !important;
+            }
+            .st-key-open_sidebar_btn .stButton button:hover {
+                transform: translateY(-2px) !important;
+                box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6) !important;
+            }
+            </style>
             """, unsafe_allow_html=True)
 
-            # Toggle button
-            if st.button("☰ Open Sidebar", key="open_sidebar_btn", help="Open navigation sidebar"):
+            # Toggle button with unique key that CSS will target
+            if st.button("☰ Open Sidebar", key="open_sidebar_btn", help="Open navigation sidebar", type="primary"):
                 st.session_state.sidebar_open = True
                 st.rerun()
 
     @staticmethod
     def show_sidebar_navigation():
-        """Show persistent sidebar navigation with toggle functionality."""
-        # Initialize sidebar state
-        if 'sidebar_open' not in st.session_state:
-            st.session_state.sidebar_open = True
+        """
+        Show persistent GLOBAL sidebar navigation.
+        This navigation is IDENTICAL across ALL pages including Apollo.
+        """
+        # Ensure sidebar visibility is properly managed
+        NavigationComponents._ensure_sidebar_visible()
 
         current_page = SessionManager.get_page()
 
         # Only show sidebar content if it's open
-        if not st.session_state.sidebar_open:
+        if not st.session_state.get('sidebar_open', True):
             return current_page
 
-        # Sidebar header with close button
-        header_col1, header_col2 = st.sidebar.columns([3, 1])
-        with header_col1:
-            st.sidebar.markdown("""
-            <div style="
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                padding: 1rem;
-                border-radius: 10px;
-                color: white;
-                margin-bottom: 1rem;
-                text-align: center;
-            ">
-                <h2 style="margin: 0; font-size: 1.2rem;">🎭 Navigation</h2>
-            </div>
-            """, unsafe_allow_html=True)
+        # CRITICAL: Fully disable Streamlit's default << collapse button and style our custom close button
+        st.sidebar.markdown("""
+        <style>
+        /* COMPLETELY DISABLE Streamlit's default << collapse button */
+        [data-testid="collapsedControl"] {
+            display: none !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+        }
 
-        with header_col2:
-            if st.sidebar.button("✖️", key="close_sidebar_btn", help="Close sidebar"):
-                st.session_state.sidebar_open = False
-                st.rerun()
+        /* Style the custom close button to be prominent and in top-left position */
+        .st-key-close_sidebar_btn {
+            position: relative !important;
+            margin-bottom: 1rem !important;
+        }
 
-        # Navigation buttons
-        pages = [
-            ("📚 Catalogue", "Catalogue", "Browse and search model catalogue"),
-            ("🏛️ Athena", "Athena", "AI assistant for client briefs"),
-            ("📊 Apollo", "Apollo", "Agency intelligence dashboard")
-        ]
+        .st-key-close_sidebar_btn button {
+            width: 100% !important;
+            height: 50px !important;
+            font-size: 1.5rem !important;
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%) !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 10px !important;
+            cursor: pointer !important;
+            transition: all 0.3s ease !important;
+            box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3) !important;
+        }
 
-        for icon_name, page_name, description in pages:
+        .st-key-close_sidebar_btn button:hover {
+            transform: translateY(-2px) !important;
+            box-shadow: 0 6px 20px rgba(255, 107, 107, 0.5) !important;
+            background: linear-gradient(135deg, #ff5252 0%, #e63946 100%) !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+        # Close button - prominent, large, and clearly visible
+        # This replaces the << chevron button
+        if st.sidebar.button("✖️ Close", key="close_sidebar_btn", help="Close sidebar (temporary)", use_container_width=True):
+            st.session_state.sidebar_open = False
+            st.rerun()
+
+        # Navigation header
+        st.sidebar.markdown("""
+        <div style="
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 1rem;
+            border-radius: 10px;
+            color: white;
+            margin-bottom: 1rem;
+            text-align: center;
+        ">
+            <h2 style="margin: 0; font-size: 1.2rem;">🎭 Navigation</h2>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # GLOBAL Navigation buttons - same for ALL pages
+        for icon_name, page_name, description in NavigationComponents.NAV_ITEMS:
             is_current = current_page == page_name
             button_style = "primary" if is_current else "secondary"
 
@@ -939,9 +1019,9 @@ class NavigationComponents:
             ):
                 if page_name != current_page:
                     SessionManager.set_page(page_name)
+                    # Reset sidebar to visible when navigating
+                    st.session_state.sidebar_open = True
                     st.rerun()
-
-
 
         # Return current page
         return current_page

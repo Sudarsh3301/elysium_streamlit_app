@@ -7,12 +7,21 @@ REFACTORED: Now uses HTTPS-only image handling.
 import streamlit as st
 import pandas as pd
 import logging
+import re
 from typing import Dict, List, Optional, Any
 
 # Import HTTPS image utilities
 from https_image_utils import https_image_handler
 
 logger = logging.getLogger(__name__)
+
+def generate_model_url_slug(name: str) -> str:
+    """Generate SEO-friendly URL slug from model name."""
+    # Convert to lowercase and replace spaces with underscores
+    slug = name.lower().replace(' ', '_')
+    # Remove any non-alphanumeric characters except underscores
+    slug = re.sub(r'[^a-z0-9_]', '', slug)
+    return slug
 
 
 class ModelCardRenderer:
@@ -22,80 +31,46 @@ class ModelCardRenderer:
     def display_enhanced_model_card(model_data: Dict[str, Any], col):
         """Display an enhanced model card with hover interactions and quick actions."""
         with col:
-            # Create card container with hover styling
-            card_id = f"card_{str(model_data['model_id'])}"
+            # Use Streamlit container for clean layout
+            with st.container():
+                # REFACTORED: Model image using HTTPS URL
+                https_image_handler.render_model_thumbnail(model_data, width=280)
 
-            # Enhanced card with hover effects
-            st.markdown(f"""
-            <div id="{card_id}" style="
-                border: 1px solid #e0e0e0;
-                border-radius: 12px;
-                padding: 1rem;
-                margin-bottom: 1rem;
-                background: white;
-                transition: all 0.3s ease;
-                cursor: pointer;
-            " onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 8px 25px rgba(0,0,0,0.15)'; this.style.borderColor='#667eea';"
-               onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none'; this.style.borderColor='#e0e0e0';">
-            """, unsafe_allow_html=True)
+                # Model details
+                st.markdown(f"**{model_data['name']}**")
+                st.markdown(f"*Division: {model_data['division'].upper()}*")
 
-            # REFACTORED: Model image using HTTPS URL
-            https_image_handler.render_model_thumbnail(model_data, width=280)
+                # Hover overlay with key attributes
+                st.markdown(f"""
+                <div style="
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 0.3rem;
+                    margin: 0.5rem 0;
+                ">
+                    <span style="background: #e3f2fd; padding: 0.2rem 0.5rem; border-radius: 12px; font-size: 0.75rem;">
+                        📏 {int(model_data['height_cm'])}cm
+                    </span>
+                    <span style="background: #f3e5f5; padding: 0.2rem 0.5rem; border-radius: 12px; font-size: 0.75rem;">
+                        💇 {model_data['hair_color'].title()}
+                    </span>
+                    <span style="background: #e8f5e8; padding: 0.2rem 0.5rem; border-radius: 12px; font-size: 0.75rem;">
+                        👁️ {model_data['eye_color'].title()}
+                    </span>
+                </div>
+                """, unsafe_allow_html=True)
 
-            # Model details
-            st.markdown(f"**{model_data['name']}**")
-            st.markdown(f"*Division: {model_data['division'].upper()}*")
-
-            # Hover overlay with key attributes
-            st.markdown(f"""
-            <div style="
-                display: flex;
-                flex-wrap: wrap;
-                gap: 0.3rem;
-                margin: 0.5rem 0;
-            ">
-                <span style="background: #e3f2fd; padding: 0.2rem 0.5rem; border-radius: 12px; font-size: 0.75rem;">
-                    📏 {int(model_data['height_cm'])}cm
-                </span>
-                <span style="background: #f3e5f5; padding: 0.2rem 0.5rem; border-radius: 12px; font-size: 0.75rem;">
-                    💇 {model_data['hair_color'].title()}
-                </span>
-                <span style="background: #e8f5e8; padding: 0.2rem 0.5rem; border-radius: 12px; font-size: 0.75rem;">
-                    👁️ {model_data['eye_color'].title()}
-                </span>
-            </div>
-            """, unsafe_allow_html=True)
-
-            # Action buttons
-            col1, col2 = st.columns(2)
-            with col1:
+                # Action buttons - only Quick View button now
                 if st.button(
                     "👁️ Quick View",
                     key=f"quick_{str(model_data['model_id'])}",
                     type="secondary",
-                    use_container_width=True
+                    use_container_width=False
                 ):
-                    st.session_state.quick_view_model = model_data['model_id']
+                    # Generate SEO-friendly URL slug and set query parameter
+                    model_slug = generate_model_url_slug(model_data['name'])
+                    st.query_params["model"] = model_slug
                     st.rerun()
-
-            with col2:
-                if st.button(
-                    "📊 Analytics",
-                    key=f"analytics_{str(model_data['model_id'])}",
-                    type="secondary",
-                    use_container_width=True
-                ):
-                    # Set shared model context for Apollo
-                    from session_manager import SessionManager
-                    SessionManager.set_shared_model_context(model_data)
-                    SessionManager.add_integration_message(
-                        f"Viewing analytics for {model_data['name']}",
-                        "success"
-                    )
-                    st.rerun()
-
-            # Close card div
-            st.markdown("</div>", unsafe_allow_html=True)
 
     @staticmethod
     def _show_image_placeholder(name: str, width: int, height: int, style: str = "default"):
@@ -132,139 +107,7 @@ class ModelCardRenderer:
         )
 
 
-class ModalRenderer:
-    """Handles rendering of quick view modals and expanded views."""
 
-    @staticmethod
-    def render_quick_view_modal(df: pd.DataFrame):
-        """Render quick view modal for model details with performance optimizations."""
-        model_id = st.session_state.get('quick_view_model')
-        if not model_id:
-            return
-
-        # Check if model data is already cached in session state
-        cache_key = f"modal_data_{str(model_id)}"
-        if cache_key not in st.session_state:
-            # Find model data (only when not cached)
-            model_data = df[df['model_id'] == model_id]
-            if model_data.empty:
-                st.error("Model not found")
-                st.session_state.quick_view_model = None
-                return
-
-            # Cache the model info in session state
-            st.session_state[cache_key] = model_data.iloc[0].to_dict()
-
-        model_info = st.session_state[cache_key]
-
-        # Modal overlay with improved styling
-        st.markdown("""
-        <div style="
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.6);
-            z-index: 1000;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            backdrop-filter: blur(2px);
-        ">
-        </div>
-        """, unsafe_allow_html=True)
-
-        # Modal content with loading states
-        with st.container():
-            # Header with close button
-            header_col1, header_col2 = st.columns([3, 1])
-            with header_col1:
-                st.markdown("### 👁️ Quick View")
-            with header_col2:
-                if st.button("❌", key="modal_close_header", help="Close modal"):
-                    # Clear cached data when closing
-                    if cache_key in st.session_state:
-                        del st.session_state[cache_key]
-                    st.session_state.quick_view_model = None
-                    st.rerun()
-
-            _, col2, _ = st.columns([1, 2, 1])
-
-            with col2:
-                # Show model details first (fast)
-                st.markdown(f"## {model_info['name']}")
-                st.markdown(f"**Division:** {model_info['division'].upper()}")
-
-                # Attributes grid (fast)
-                attr_col1, attr_col2 = st.columns(2)
-                with attr_col1:
-                    st.markdown(f"**Height:** {int(model_info['height_cm'])} cm")
-                    st.markdown(f"**Hair:** {model_info['hair_color'].title()}")
-                with attr_col2:
-                    st.markdown(f"**Eyes:** {model_info['eye_color'].title()}")
-
-                # REFACTORED: Image loading using HTTPS URL
-                with st.spinner("Loading image..."):
-                    https_image_handler.render_model_thumbnail(model_info, width=300, use_column=False)
-
-                # Action buttons
-                st.markdown("---")
-                button_col1, button_col2, button_col3 = st.columns(3)
-
-                with button_col1:
-                    if st.button("📊 Analytics", key="modal_analytics", use_container_width=True):
-                        from session_manager import SessionManager
-                        SessionManager.set_shared_model_context(model_info)
-                        SessionManager.add_integration_message(
-                            f"Viewing analytics for {model_info['name']}",
-                            "success"
-                        )
-                        # Clear cached data
-                        if cache_key in st.session_state:
-                            del st.session_state[cache_key]
-                        st.session_state.quick_view_model = None
-                        st.rerun()
-
-                with button_col2:
-                    if st.button("🎯 Athena", key="modal_athena", use_container_width=True):
-                        from session_manager import SessionManager
-                        SessionManager.transfer_model_to_athena(model_info, "Catalogue")
-                        # Clear cached data
-                        if cache_key in st.session_state:
-                            del st.session_state[cache_key]
-                        st.session_state.quick_view_model = None
-                        st.rerun()
-
-                with button_col3:
-                    if st.button("❌ Close", key="modal_close", use_container_width=True):
-                        # Clear cached data
-                        if cache_key in st.session_state:
-                            del st.session_state[cache_key]
-                        st.session_state.quick_view_model = None
-                        st.rerun()
-
-    @staticmethod
-    def _show_modal_image_fallback(name: str, width: int, height: int):
-        """Show fallback image for modal."""
-        st.markdown(f"""
-        <div style="
-            width: {width}px;
-            height: {height}px;
-            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-            border: 2px solid #dee2e6;
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #6c757d;
-            font-size: 18px;
-            font-weight: bold;
-            margin: 0 auto;
-        ">
-            📷 {name}
-        </div>
-        """, unsafe_allow_html=True)
 
 
 class SearchRenderer:
@@ -365,6 +208,78 @@ class SearchRenderer:
                     st.session_state.nl_search_query = ""
                 from session_manager import SessionManager
                 SessionManager.add_notification("All filters cleared! Showing complete roster.", "success")
+                st.rerun()
+
+
+class ModelProfilePage:
+    """Handles rendering of dedicated model profile pages."""
+
+    @staticmethod
+    def render_model_profile_page(model_data: Dict[str, Any], df: pd.DataFrame):
+        """Render a dedicated model profile page with clean layout and navigation."""
+
+        # Page header with back navigation
+        header_col1, header_col2 = st.columns([1, 3])
+
+        with header_col1:
+            if st.button("← Back to Catalogue", type="secondary", use_container_width=True):
+                # Clear URL parameters and return to catalogue
+                st.query_params.clear()
+                st.rerun()
+
+        with header_col2:
+            st.markdown(f"# {model_data['name']}")
+            st.markdown(f"**{model_data['division'].upper()} Division**")
+
+        st.markdown("---")
+
+        # Model details section
+        st.markdown("## 📋 Model Details")
+
+        # Physical attributes in organized columns
+        detail_cols = st.columns(3)
+
+        with detail_cols[0]:
+            st.markdown("### Physical Attributes")
+            st.markdown(f"**Height:** {int(model_data['height_cm'])} cm")
+            st.markdown(f"**Hair:** {model_data['hair_color'].title()}")
+            st.markdown(f"**Eyes:** {model_data['eye_color'].title()}")
+
+        with detail_cols[1]:
+            st.markdown("### Measurements")
+            if model_data.get('bust'):
+                st.markdown(f"**Bust:** {model_data['bust']}")
+            if model_data.get('waist'):
+                st.markdown(f"**Waist:** {model_data['waist']}")
+            if model_data.get('hips'):
+                st.markdown(f"**Hips:** {model_data['hips']}")
+            if model_data.get('shoes'):
+                st.markdown(f"**Shoes:** {model_data['shoes']}")
+
+        with detail_cols[2]:
+            st.markdown("### Professional Info")
+            st.markdown(f"**Division:** {model_data['division'].upper()}")
+            st.markdown(f"**Model ID:** {str(model_data['model_id'])}")
+            if model_data.get('profile_url'):
+                st.link_button("🔗 View APM Profile", model_data['profile_url'], use_container_width=True)
+
+        st.markdown("---")
+
+        # Portfolio gallery section
+        st.markdown("## 📸 Portfolio Gallery")
+
+        # Use HTTPS image handler for responsive portfolio gallery
+        https_image_handler.render_portfolio_gallery(model_data, images_per_row=3, max_images=15)
+
+        st.markdown("---")
+
+        # Footer with back navigation
+        footer_col1, footer_col2, footer_col3 = st.columns([1, 2, 1])
+
+        with footer_col2:
+            if st.button("← Back to Catalogue", type="primary", use_container_width=True):
+                # Clear URL parameters and return to catalogue
+                st.query_params.clear()
                 st.rerun()
 
 

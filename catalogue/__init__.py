@@ -21,9 +21,9 @@ from .filter_engine import (
 # UI Components
 from .ui_components import (
     ModelCardRenderer,
-    ModalRenderer,
     SearchRenderer,
-    ExpandedModelRenderer
+    ExpandedModelRenderer,
+    ModelProfilePage
 )
 
 __all__ = [
@@ -40,7 +40,7 @@ __all__ = [
     
     # UI Components
     'ModelCardRenderer',
-    'ModalRenderer',
     'SearchRenderer',
-    'ExpandedModelRenderer'
+    'ExpandedModelRenderer',
+    'ModelProfilePage'
 ]
