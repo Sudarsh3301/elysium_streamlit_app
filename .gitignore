@@ -1,0 +1,10 @@
+__pycache__/
+__pycache__
+.env
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+*.env
+.streamlit/secrets.toml

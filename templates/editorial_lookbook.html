@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Editorial Lookbook | {{ agency.name }}</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 0.5in;
+      @bottom-center {
+        content: counter(page);
+        font-family: "Helvetica Neue", Arial, sans-serif;
+        font-size: 10px;
+        color: #999;
+      }
+    }
+
+    body {
+      font-family: "Helvetica Neue", Arial, sans-serif;
+      color: #222;
+      line-height: 1.3;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* Cover page */
+    .cover {
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      height: 100vh;
+      page-break-after: always;
+    }
+
+    .cover h1 {
+      font-size: 36px;
+      font-weight: 300;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      margin-bottom: 20px;
+      color: #2c3e50;
+    }
+
+    .cover h2 {
+      font-size: 14px;
+      font-weight: 300;
+      color: #666;
+      letter-spacing: 1px;
+      margin-bottom: 40px;
+    }
+
+    .cover .hero-collage {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+      margin: 40px 0;
+      height: 400px;
+    }
+
+    .cover .hero-collage img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 4px;
+    }
+
+    /* Model spread pages */
+    .model-spread {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 30px;
+      align-items: center;
+      min-height: 100vh;
+      page-break-after: always;
+      padding: 20px 0;
+    }
+
+    .model-image {
+      width: 100%;
+      height: 600px;
+      object-fit: cover;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }
+
+    .model-details {
+      padding: 40px 20px;
+    }
+
+    .model-name {
+      font-size: 32px;
+      font-weight: 300;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+      color: #2c3e50;
+    }
+
+    .model-division {
+      font-size: 12px;
+      color: #999;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 30px;
+    }
+
+    .model-stats {
+      font-size: 11px;
+      line-height: 1.8;
+      color: #555;
+      margin-bottom: 30px;
+    }
+
+    .model-stats div {
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 1px solid #eee;
+      padding: 5px 0;
+    }
+
+    .model-stats div:last-child {
+      border-bottom: none;
+    }
+
+    .model-description {
+      font-size: 10px;
+      color: #777;
+      font-style: italic;
+      line-height: 1.6;
+      margin-top: 20px;
+    }
+
+    /* Secondary images grid */
+    .secondary-images {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .secondary-images img {
+      width: 100%;
+      height: 120px;
+      object-fit: cover;
+      border-radius: 4px;
+    }
+
+    /* Full page model (for single model spreads) */
+    .full-page-model {
+      text-align: center;
+      page-break-after: always;
+      padding: 40px 0;
+    }
+
+    .full-page-model .model-image {
+      width: 70%;
+      height: 700px;
+      margin: 0 auto 30px auto;
+    }
+
+    .full-page-model .model-info {
+      max-width: 400px;
+      margin: 0 auto;
+    }
+
+    /* Footer */
+    .editorial-footer {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 8px;
+      color: #bbb;
+      text-align: center;
+    }
+
+    /* Alternating layouts */
+    .model-spread:nth-child(even) {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .model-spread:nth-child(odd) {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .model-spread:nth-child(odd) .model-details {
+      order: 1;
+    }
+
+    .model-spread:nth-child(odd) .model-image-container {
+      order: 2;
+    }
+
+    /* Print optimizations */
+    @media print {
+      .model-spread {
+        page-break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- COVER PAGE -->
+  <section class="cover">
+    <h1>Editorial Lookbook</h1>
+    <h2>{{ campaign.title or "Curated Selection" }} — {{ timestamp.split(',')[0] if timestamp else "2024" }}</h2>
+    
+    <div class="hero-collage">
+      {% for model in featured_models[:4] %}
+      {% if model.hero_image %}
+      <img src="{{ model.hero_image }}" alt="{{ model.name }}">
+      {% elif model.images %}
+      <img src="{{ model.images[0] }}" alt="{{ model.name }}">
+      {% endif %}
+      {% endfor %}
+    </div>
+
+    <div style="font-size: 10px; color: #999; margin-top: 40px;">
+      {{ agency.name }} — Professional Model Representation
+    </div>
+  </section>
+
+  <!-- MODEL SPREADS -->
+  {% for model in featured_models %}
+  
+  {% if loop.index <= 4 %}
+  <!-- Two-column spread for first 4 models -->
+  <section class="model-spread">
+    <div class="model-details">
+      <h2 class="model-name">{{ model.name }}</h2>
+      <div class="model-division">{{ model.division | title }} Division</div>
+      
+      <div class="model-stats">
+        <div><span>Height</span><span>{{ model.height_cm | format_height }}</span></div>
+        <div><span>Hair</span><span>{{ model.hair_color | title }}</span></div>
+        <div><span>Eyes</span><span>{{ model.eye_color | title }}</span></div>
+        {% if model.bust %}<div><span>Bust</span><span>{{ model.bust }}</span></div>{% endif %}
+        {% if model.waist %}<div><span>Waist</span><span>{{ model.waist }}</span></div>{% endif %}
+        {% if model.hips %}<div><span>Hips</span><span>{{ model.hips }}</span></div>{% endif %}
+      </div>
+
+      {% if model.thumbnail_images %}
+      <div class="secondary-images">
+        {% for img in model.thumbnail_images[:3] %}
+        <img src="{{ img }}" alt="{{ model.name }} Portfolio">
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <div class="model-description">
+        {{ model.description or "Versatile editorial model with extensive experience in high-fashion photography and runway presentations. Available for exclusive bookings." }}
+      </div>
+    </div>
+    
+    <div class="model-image-container">
+      {% if model.hero_image %}
+      <img src="{{ model.hero_image }}" alt="{{ model.name }}" class="model-image">
+      {% elif model.images %}
+      <img src="{{ model.images[0] }}" alt="{{ model.name }}" class="model-image">
+      {% endif %}
+    </div>
+  </section>
+  
+  {% else %}
+  <!-- Full page layout for additional models -->
+  <section class="full-page-model">
+    {% if model.hero_image %}
+    <img src="{{ model.hero_image }}" alt="{{ model.name }}" class="model-image">
+    {% elif model.images %}
+    <img src="{{ model.images[0] }}" alt="{{ model.name }}" class="model-image">
+    {% endif %}
+    
+    <div class="model-info">
+      <h2 class="model-name">{{ model.name }}</h2>
+      <div class="model-division">{{ model.division | title }} Division</div>
+      
+      <div class="model-stats">
+        <div><span>Height</span><span>{{ model.height_cm | format_height }}</span></div>
+        <div><span>Hair</span><span>{{ model.hair_color | title }}</span></div>
+        <div><span>Eyes</span><span>{{ model.eye_color | title }}</span></div>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+  
+  {% endfor %}
+
+  <!-- Footer on every page -->
+  <div class="editorial-footer">
+    {{ agency.name }} — {{ agency.contact }} — Powered by Elysium
+  </div>
+
+</body>
+</html>

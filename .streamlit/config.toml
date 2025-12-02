@@ -1,0 +1,46 @@
+[global]
+# Development mode - set to false for production
+developmentMode = false
+
+[server]
+# Server configuration for cloud deployment
+port = 8501
+enableXsrfProtection = true
+maxUploadSize = 200
+maxMessageSize = 200
+enableWebsocketCompression = false
+
+# Headless mode for cloud deployment
+headless = true
+
+# Base URL path (useful for reverse proxy setups)
+baseUrlPath = ""
+
+# File watcher type
+fileWatcherType = "auto"
+
+[browser]
+# Browser configuration
+gatherUsageStats = false
+serverAddress = "localhost"
+serverPort = 8501
+
+[theme]
+# Theme configuration for consistent appearance
+primaryColor = "#667eea"
+backgroundColor = "#f8f9fa"
+secondaryBackgroundColor = "#e9ecef"
+textColor = "#212529"
+font = "sans serif"
+
+[runner]
+# Runner configuration
+magicEnabled = true
+postScriptGC = true
+fastReruns = true
+enforceSerializableSessionState = true
+
+[logger]
+# Logging configuration
+level = "info"
+messageFormat = "%(asctime)s %(message)s"

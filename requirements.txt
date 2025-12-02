@@ -1,0 +1,25 @@
+# Core Streamlit Application Dependencies
+streamlit>=1.28.0
+pandas>=2.0.0
+requests>=2.31.0
+Pillow>=10.0.0
+plotly>=5.15.0
+
+# PDF Generation and Templates
+reportlab>=4.0.0
+jinja2>=3.1.0
+weasyprint>=60.0
+
+# Utility Libraries
+pyperclip>=1.8.0
+pathlib2>=2.3.7
+
+# Data Processing
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+
+# LLM Integration
+groq>=0.4.0  # Groq API client for llama-3.1-8b-instant
+
+# Optional: For enhanced functionality (may not be available in all cloud environments)
+# ollama  # Local LLM service - not available in cloud deployments (DEPRECATED - migrated to Groq)
